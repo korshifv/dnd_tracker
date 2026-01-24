@@ -1,0 +1,28 @@
+# Compiled object files
+*.o
+*.obj
+
+# Executable and shared objects
+*.exe
+*.out
+*.so
+*.dll
+*.dylib
+
+# Generated moc files
+moc_*.cpp
+
+# Qt artifacts
+*.qm
+*.app/
+
+# Build directories
+build/
+cmake-build-*/
+.vscode/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*.user
