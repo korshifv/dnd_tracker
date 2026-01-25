@@ -29,3 +29,5 @@ cmake-build-*/
 dnd_tracker
 compile_flags.txt
 dnd_state.json
+*.json
+*.pdf
