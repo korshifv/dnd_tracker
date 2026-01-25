@@ -1,4 +1,6 @@
 #include "CharacterSheet.h"
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
@@ -21,8 +23,7 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
 
   setWindowTitle("Редактор персонажа");
   resize(1000, 950);
-  setStyleSheet("background-color: white; color: black; font-family: 'Segoe "
-                "UI', sans-serif;");
+  setStyleSheet("font-family: 'Segoe UI', sans-serif;");
 
   auto *mainLayout = new QVBoxLayout(this);
 
@@ -31,7 +32,8 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
 
   nameEditField = new QLineEdit(data["name"].toObject()["value"].toString());
   nameEditField->setStyleSheet("font-size: 20px; font-weight: bold; border: "
-                               "2px solid black; padding: 5px;");
+                               "2px solid palette(mid); padding: 5px; color: "
+                               "palette(text); background: palette(base);");
   topPanel->addWidget(new QLabel("<b>ИМЯ:</b>"));
   topPanel->addWidget(nameEditField, 1);
 
@@ -42,15 +44,17 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
   globalProfSpin->setPrefix("+");
   globalProfSpin->setFixedWidth(80);
   globalProfSpin->setStyleSheet(
-      "font-size: 18px; font-weight: bold; border: 2px solid black; "
-      "border-radius: 5px; padding: 5px;");
+      "font-size: 18px; font-weight: bold; border: 2px solid palette(mid); "
+      "border-radius: 5px; padding: 5px; color: palette(text); background: "
+      "palette(base);");
   connect(globalProfSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
           &CharacterSheet::updateAllCalculations);
   topPanel->addWidget(globalProfSpin);
 
   auto *saveBtn = new QPushButton("💾 СОХРАНИТЬ");
-  saveBtn->setStyleSheet("background: #ccffcc; border: 2px solid black; "
-                         "font-weight: bold; padding: 10px;");
+  saveBtn->setStyleSheet("border: 2px solid palette(mid); "
+                         "font-weight: bold; padding: 10px; color: "
+                         "palette(button-text); background: palette(button);");
   connect(saveBtn, &QPushButton::clicked, this, &CharacterSheet::saveToFile);
   topPanel->addWidget(saveBtn);
 
@@ -59,21 +63,53 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
   tabs = new QTabWidget(this);
   // Настройка стилей вкладок через таблицу стилей
   tabs->setStyleSheet(
-      "QTabWidget::pane { border: 2px solid black; background: white; }"
-      "QTabBar::tab { border: 2px solid black; border-bottom: none; padding: "
-      "12px; font-weight: bold; color: black; background: #eee; min-width: "
-      "100px; }"
-      "QTabBar::tab:selected { background: white; }");
+      "QTabWidget::pane { border: 2px solid palette(mid); }"
+      "QTabBar::tab { border: 2px solid palette(mid); "
+      "border-bottom: none; padding: "
+      "12px; font-weight: bold; min-width: "
+      "100px; color: palette(window-text); background: palette(window); }");
 
   setupGeneralTab(data);
   setupSkillsTab(data);
   setupCombatTab(data);
+  setupMagicTab(data);
   setupNotesTab(data);
 
   mainLayout->addWidget(tabs);
 
   // Первый запуск расчетов
   updateAllCalculations();
+}
+
+// Конвертация формата TipTap (JSON документ) в простой текст
+// Извлекает текст из параграфов, игнорируя сложное форматирование
+QString CharacterSheet::tipTapToPlain(const QJsonObject &obj) {
+  QString t;
+  QJsonArray c;
+
+  // Вариант 1: obj содержит ключ "data", внутри которого "content"
+  if (obj.contains("data") && obj["data"].toObject().contains("content")) {
+    c = obj["data"].toObject()["content"].toArray();
+  }
+  // Вариант 2: obj сам является документом и содержит "content"
+  else if (obj.contains("content")) {
+    c = obj["content"].toArray();
+  }
+  // Вариант 3: если это строка? (нет, входной параметр QJsonObject)
+  // Если ничего не нашли - пустой массив
+
+  for (auto bV : c) {
+    auto b = bV.toObject();
+    if (b["type"].toString() == "paragraph") {
+      bool first = true;
+      for (auto cV : b["content"].toArray()) {
+        t += cV.toObject()["text"].toString();
+        first = false;
+      }
+      t += "\n";
+    }
+  }
+  return t;
 }
 
 // Расчет модификатора характеристики по правилам D&D 5e
@@ -83,13 +119,14 @@ int CharacterSheet::calculateMod(int score) {
 }
 
 // Обновление всех вычисляемых полей при изменении характеристик или мастерства
-void CharacterSheet::updateAllCalculations() {
+void CharacterSheet::updateAllCalculations(int) {
   int pb = globalProfSpin->value(); // Бонус мастерства
   QMap<QString, int> currentMods;
 
   // 1. Считаем модификаторы характеристик и Спасброски
   for (auto it = statSpins.begin(); it != statSpins.end(); ++it) {
-    int mod = calculateMod(it.value()->value());
+    int score = it.value()->value();
+    int mod = std::floor((score - 10) / 2.0);
     currentMods[it.key()] = mod;
 
     // Обновляем текст модификатора (+5)
@@ -126,6 +163,9 @@ void CharacterSheet::updateAllCalculations() {
     int hit = currentMods[w.ability] + (w.isProf ? pb : 0) + w.magicBonus;
     w.hitLabel->setText(QString("+%1").arg(hit));
   }
+
+  // 4. Считаем магию (DC, Bonus)
+  updateSpellCalculations();
 }
 
 void CharacterSheet::toggleSkillProficiency(const QString &key) {
@@ -145,14 +185,15 @@ QWidget *CharacterSheet::createStatBox(const QString &label, int score,
                                        bool isProfSave,
                                        const QString &statKey) {
   auto *box = new QFrame();
-  box->setStyleSheet(
-      "border: 2px solid black; border-radius: 12px; background: #fdfdfd;");
+  box->setStyleSheet("border: 2px solid palette(mid); border-radius: 12px; "
+                     "background: palette(window);");
   auto *bl = new QVBoxLayout(box);
   bl->setSpacing(2);
 
   auto *nameLbl = new QLabel(label.toUpper());
   nameLbl->setAlignment(Qt::AlignCenter);
-  nameLbl->setStyleSheet("border: none; font-size: 10px; font-weight: bold;");
+  nameLbl->setStyleSheet("border: none; font-size: 10px; font-weight: bold; "
+                         "color: palette(window-text);");
 
   auto *sb = new QSpinBox();
   sb->setRange(1, 30);
@@ -160,15 +201,15 @@ QWidget *CharacterSheet::createStatBox(const QString &label, int score,
   sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
   sb->setAlignment(Qt::AlignCenter);
   sb->setStyleSheet("border: none; font-size: 26px; font-weight: bold; "
-                    "background: transparent;");
+                    "background: transparent; color: palette(text);");
   statSpins[statKey] = sb;
   connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
           &CharacterSheet::updateAllCalculations);
 
   auto *ml = new QLabel("+0");
   ml->setAlignment(Qt::AlignCenter);
-  ml->setStyleSheet(
-      "border: none; font-size: 14px; font-weight: bold; color: #444;");
+  ml->setStyleSheet("border: none; font-size: 14px; font-weight: bold; color: "
+                    "palette(text);");
   modLabels[statKey] = ml;
 
   auto *saveVal = new QLabel("Спас: +0");
@@ -179,8 +220,9 @@ QWidget *CharacterSheet::createStatBox(const QString &label, int score,
 
   auto *saveBtn = new QPushButton(isProfSave ? "● ВЛАДЕЮ" : "○ СПАС");
   saveBtn->setStyleSheet(
-      "border: 1px solid #000; border-radius: 4px; font-size: 10px; "
-      "font-weight: bold; background: #eee; color: black; padding: 3px;");
+      "border: 1px solid palette(mid); border-radius: 4px; font-size: 10px; "
+      "font-weight: bold; background: palette(button); color: "
+      "palette(button-text); padding: 3px;");
   saveProfBtns[statKey] = saveBtn;
   savesState[statKey] = isProfSave;
   connect(saveBtn, &QPushButton::clicked,
@@ -250,8 +292,9 @@ void CharacterSheet::setupSkillsTab(const QJsonObject &data) {
     auto *btn =
         new QPushButton(profLevel == 2 ? "●●" : (profLevel == 1 ? "●" : "○"));
     btn->setFixedSize(40, 30);
-    btn->setStyleSheet("border: 1px solid black; font-weight: bold; "
-                       "background: #eee; color: black;");
+    btn->setStyleSheet(
+        "border: 1px solid palette(mid); font-weight: bold; "
+        "background: palette(button); color: palette(button-text);");
     skillProfBtns[k] = btn;
     connect(btn, &QPushButton::clicked,
             [this, k]() { toggleSkillProficiency(k); });
@@ -264,7 +307,8 @@ void CharacterSheet::setupSkillsTab(const QJsonObject &data) {
     sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
     sb->setFixedWidth(50);
     sb->setStyleSheet(
-        "border: 1px solid black; border-radius: 4px; font-weight: bold;");
+        "border: 1px solid palette(mid); border-radius: 4px; font-weight: "
+        "bold; color: palette(text); background: palette(base);");
     skillSpins[k] = sb;
 
     grid->addWidget(btn, row, 0);
@@ -286,49 +330,32 @@ void CharacterSheet::setupCombatTab(const QJsonObject &data) {
   auto *container = new QWidget();
   auto *v = new QVBoxLayout(container);
 
-  v->addWidget(new QLabel("<h3>Ячейки заклинаний</h3>"));
-  auto *slotsLayout = new QHBoxLayout();
-  QJsonObject spells = data["spells"].toObject();
-  for (int i = 1; i <= 3; ++i) {
-    QString key = QString("slots-%1").arg(i);
-    if (spells.contains(key)) {
-      int maxVal = spells[key].toObject()["value"].toInt();
-      auto *f = new QFrame();
-      f->setStyleSheet(
-          "border: 2px solid black; border-radius: 8px; background: #eee;");
-      auto *fl = new QVBoxLayout(f);
-      fl->addWidget(new QLabel(QString("Круг %1").arg(i)));
-      auto *sb = new QSpinBox();
-      sb->setRange(0, maxVal);
-      sb->setValue(maxVal); // Всегда полные при открытии
-      sb->setSuffix(QString(" / %1").arg(maxVal));
-      fl->addWidget(sb);
-      slotsLayout->addWidget(f);
-    }
-  }
-  v->addLayout(slotsLayout);
-
   v->addWidget(new QLabel("<br><h3>Оружие и атаки</h3>"));
   QJsonArray weapons = data["weaponsList"].toArray();
   for (auto wV : weapons) {
     auto w = wV.toObject();
     auto *f = new QFrame();
-    f->setStyleSheet("border: 2px solid black; border-radius: 20px; "
-                     "background: white; margin: 3px;");
+    f->setStyleSheet("border: 2px solid palette(mid); border-radius: 20px; "
+                     "background: palette(window); margin: 3px;");
     auto *fl = new QHBoxLayout(f);
 
     auto *nameInp = new QLineEdit(w["name"].toObject()["value"].toString());
-    nameInp->setStyleSheet("border: 1px solid black; border-radius: 12px; "
-                           "padding: 3px 12px; font-weight: bold;");
+    nameInp->setStyleSheet(
+        "border: 1px solid palette(mid); border-radius: 12px; "
+        "padding: 3px 12px; font-weight: bold; color: palette(text); "
+        "background: palette(base);");
 
     auto *hitLbl = new QLabel("+0");
-    hitLbl->setStyleSheet("border: 1px solid black; border-radius: 10px; "
-                          "padding: 2px 10px; color: red; font-weight: bold;");
+    hitLbl->setStyleSheet(
+        "border: 1px solid palette(mid); border-radius: 10px; "
+        "padding: 2px 10px; color: #ff5555; font-weight: bold;");
 
     auto *dmgInp = new QLineEdit(w["dmg"].toObject()["value"].toString());
     dmgInp->setFixedWidth(100);
-    dmgInp->setStyleSheet("border: 1px solid black; border-radius: 10px; "
-                          "padding: 2px; color: orange; font-weight: bold;");
+    dmgInp->setStyleSheet(
+        "border: 1px solid palette(mid); border-radius: 10px; "
+        "padding: 2px; color: #ffa500; font-weight: bold; background: "
+        "palette(base);");
 
     weaponsUI.append({nameInp, hitLbl, dmgInp, w["ability"].toString(),
                       w["isProf"].toBool(),
@@ -345,6 +372,281 @@ void CharacterSheet::setupCombatTab(const QJsonObject &data) {
   scroll->setWidget(container);
   l->addWidget(scroll);
   tabs->addTab(tab, "Бой");
+}
+
+// Вспомогательная функция для создания поля шапки с комбобоксом
+QWidget *createMagicHeaderCombo(const QString &title, QComboBox *&combo,
+                                const QString &currentCode) {
+  auto *f = new QFrame();
+  f->setStyleSheet("border: 2px solid palette(text); border-radius: 0px; "
+                   "background: palette(window);");
+  auto *l = new QVBoxLayout(f);
+  l->setSpacing(0);
+  l->setContentsMargins(5, 2, 5, 2);
+
+  combo = new QComboBox();
+  combo->addItem("Интеллект", "int");
+  combo->addItem("Мудрость", "wis");
+  combo->addItem("Харизма", "cha");
+
+  // Установка текущего значения
+  int idx = combo->findData(currentCode);
+  if (idx >= 0)
+    combo->setCurrentIndex(idx);
+
+  combo->setStyleSheet("border: none; background: transparent; font-size: "
+                       "14px; font-weight: bold; color: palette(text);");
+
+  auto *lbl = new QLabel(title);
+  lbl->setAlignment(Qt::AlignCenter);
+  lbl->setStyleSheet(
+      "border: none; font-size: 9px; font-weight: bold; color: "
+      "palette(window-text); border-top: 1px solid palette(text);");
+
+  l->addWidget(combo);
+  l->addWidget(lbl);
+  return f;
+}
+
+// Вспомогательная функция для создания поля шапки (обычное текстовое поле)
+QWidget *createMagicHeaderBox(const QString &title, QLineEdit *&edit,
+                              const QString &val) {
+  auto *f = new QFrame();
+  f->setStyleSheet("border: 2px solid palette(text); border-radius: 0px; "
+                   "background: palette(window);");
+  auto *l = new QVBoxLayout(f);
+  l->setSpacing(0);
+  l->setContentsMargins(5, 2, 5, 2);
+
+  edit = new QLineEdit(val);
+  edit->setAlignment(Qt::AlignCenter);
+  edit->setStyleSheet("border: none; background: transparent; font-size: 16px; "
+                      "font-weight: bold; color: palette(text);");
+
+  auto *lbl = new QLabel(title);
+  lbl->setAlignment(Qt::AlignCenter);
+  lbl->setStyleSheet(
+      "border: none; font-size: 9px; font-weight: bold; color: "
+      "palette(window-text); border-top: 1px solid palette(text);");
+
+  l->addWidget(edit);
+  l->addWidget(lbl);
+  return f;
+}
+
+void CharacterSheet::setupMagicTab(const QJsonObject &data) {
+  auto *tab = new QWidget();
+  auto *mainL = new QVBoxLayout(tab);
+
+  // --- ШАПКА ---
+  auto *header = new QHBoxLayout();
+
+  // Данные для шапки
+  // 1. Попытка взять из root (originalRoot доступен как член класса)
+  // но лучше брать из распаршенного data, так как там лежат поля
+  QString cls = data["casterClass"].toObject()["value"].toString();
+
+  // 2. Фолбек на подкласс (для трикстеров и т.д.)
+  if (cls.isEmpty()) {
+    cls =
+        data["info"].toObject()["charSubclass"].toObject()["value"].toString();
+  }
+
+  // 3. Фолбек на класс
+  if (cls.isEmpty()) {
+    cls = data["info"].toObject()["charClass"].toObject()["value"].toString();
+  }
+
+  if (cls.isEmpty())
+    cls = "Класс заклинателя";
+
+  QJsonObject sInfo = data["spellsInfo"].toObject();
+  QString abilityCode = sInfo["base"].toObject()["code"].toString();
+  if (abilityCode.isEmpty())
+    abilityCode = "int"; // По умолчанию Интеллект
+
+  // DC и Bonus считаем заново или берем сохраненные
+  // Но так как у нас теперь авторасчет, мы можем их инициализировать нулями,
+  // а потом вызвать updateSpellCalculations() в конце
+  QString saveDC = sInfo["save"].toObject()["value"].toString();
+  QString bonus = sInfo["mod"].toObject()["value"].toString();
+
+  header->addWidget(
+      createMagicHeaderBox("КЛАСС ЗАКЛИНАТЕЛЯ", spellClassEdit, cls), 2);
+  header->addSpacing(20);
+  header->addWidget(
+      createMagicHeaderCombo("БАЗОВАЯ ХАР-КА", spellAbilityCombo, abilityCode),
+      1);
+  header->addSpacing(10);
+  header->addWidget(
+      createMagicHeaderBox("СЛ СПАСБРОСКА", spellSaveDCEdit, saveDC), 1);
+  spellSaveDCEdit->setReadOnly(true); // Теперь только чтение (авторасчет)
+  header->addSpacing(10);
+  header->addWidget(
+      createMagicHeaderBox("БОНУС АТАКИ", spellAttackBonusEdit, bonus), 1);
+  spellAttackBonusEdit->setReadOnly(true); // Только чтение
+
+  // Подключение сигналов авторасчета
+  connect(spellAbilityCombo,
+          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          &CharacterSheet::updateSpellCalculations);
+
+  mainL->addLayout(header);
+  mainL->addSpacing(15);
+
+  // --- ПОЛОТНО ЗАКЛИНАНИЙ (3 КОЛОНКИ) ---
+  auto *scroll = new QScrollArea();
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+
+  auto *container = new QWidget();
+  auto *colsL = new QHBoxLayout(container);
+  colsL->setSpacing(15);
+  colsL->setAlignment(Qt::AlignTop);
+
+  auto *col1 = new QVBoxLayout();
+  col1->setAlignment(Qt::AlignTop);
+  auto *col2 = new QVBoxLayout();
+  col2->setAlignment(Qt::AlignTop);
+  auto *col3 = new QVBoxLayout();
+  col3->setAlignment(Qt::AlignTop);
+
+  QJsonObject textData = data["text"].toObject();
+  QJsonObject spellsSlotsData = data["spells"].toObject();
+
+  for (int i = 0; i <= 9; ++i) {
+    QString key = QString("spells-level-%1").arg(i);
+    QString slotKey = QString("slots-%1").arg(i);
+
+    auto *group = new QFrame();
+    auto *gl = new QVBoxLayout(group);
+    gl->setContentsMargins(0, 0, 0, 10);
+    gl->setSpacing(5);
+
+    // Заголовок уровня
+    auto *headFrame = new QFrame();
+    // Убрали "ублюдочные кружки" (radius 15 -> 4), сделали более строгий стиль
+    headFrame->setStyleSheet("border: 1px solid palette(text); border-radius: "
+                             "4px; background: palette(window);");
+    headFrame->setFixedHeight(36);
+    auto *hl = new QHBoxLayout(headFrame);
+    hl->setContentsMargins(5, 0, 10, 0);
+    hl->setAlignment(Qt::AlignVCenter); // Центрирование всего содержимого
+
+    auto *lvlCircle = new QLabel(QString::number(i));
+    lvlCircle->setFixedSize(24, 24);
+    lvlCircle->setAlignment(Qt::AlignCenter);
+    lvlCircle->setStyleSheet("border: 1px solid palette(text); border-radius: "
+                             "12px; font-weight: bold; font-size: 14px;");
+
+    QString title = (i == 0) ? "ЗАГОВОРЫ" : "";
+    auto *titleLbl = new QLabel(title);
+    titleLbl->setStyleSheet(
+        "border: none; font-weight: bold; font-size: 12px;");
+
+    hl->addWidget(lvlCircle);
+    hl->addWidget(titleLbl);
+    hl->addStretch();
+
+    // Ячейки заклинаний (только для 1-9 уровней)
+    if (i > 0) {
+      auto *lblTotal = new QLabel("ВСЕГО ЯЧЕЕК");
+      lblTotal->setStyleSheet("border: none; font-size: 10px; font-weight: "
+                              "bold; margin-right: 5px;");
+      hl->addWidget(lblTotal);
+
+      auto *sb = new QSpinBox();
+      sb->setRange(0, 99);
+      sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
+      sb->setFixedSize(30, 24); // Уменьшили и отцентровали
+      sb->setAlignment(Qt::AlignCenter);
+      sb->setStyleSheet("border: 1px solid palette(text); border-radius: 4px; "
+                        "font-weight: bold; font-size: 14px; background: "
+                        "palette(base); color: palette(text);");
+
+      // Загрузка значения ячеек
+      int maxVal = 0;
+      if (spellsSlotsData.contains(slotKey)) {
+        maxVal = spellsSlotsData[slotKey].toObject()["value"].toInt();
+      }
+      sb->setValue(maxVal);
+      spellSlotSpins[i] = sb;
+
+      hl->addWidget(sb);
+
+      auto *lblExpended = new QLabel("ПОТРАЧЕНО");
+      lblExpended->setStyleSheet("border: none; font-size: 10px; font-weight: "
+                                 "bold; margin-left: 10px; margin-right: 5px;");
+      hl->addWidget(lblExpended);
+
+      // Контейнер для кружочков
+      auto *circlesWidget = new QWidget();
+      auto *circlesLayout = new QHBoxLayout(circlesWidget);
+      circlesLayout->setContentsMargins(0, 0, 0, 0);
+      circlesLayout->setSpacing(2);
+      spellCirclesLayouts[i] = circlesLayout;
+
+      // Первоначальное заполнение
+      updateSpellSlots(i, maxVal);
+
+      // Подключение обновления
+      connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
+              [this, i](int val) { updateSpellSlots(i, val); });
+      hl->addWidget(circlesWidget);
+    }
+
+    // Текст заклинаний
+    QString spellsText = "";
+    if (textData.contains(key)) {
+      spellsText = tipTapToPlain(textData[key].toObject()["value"].toObject());
+    }
+    auto *txt = new QTextEdit();
+    txt->setPlainText(spellsText);
+
+    // Вычисляем высоту на основе строк, но не меньше 60
+    int lines = spellsText.count('\n') + 1;
+    int h = qMax(60, lines * 20 + 20);
+    if (h > 400)
+      h = 400;
+    txt->setFixedHeight(h);
+
+    group->setObjectName("spellGroup");
+    headFrame->setObjectName("spellHead");
+    txt->setObjectName("spellEdit");
+
+    // Стилизация с использованием селекторов для предотвращения наследования
+    group->setStyleSheet(
+        "#spellGroup { border: 1px solid palette(mid); border-radius: 4px; "
+        "background: palette(window); margin-bottom: 10px; }");
+    headFrame->setStyleSheet("#spellHead { border: none; border-bottom: 2px "
+                             "solid palette(text); background: transparent; }");
+    txt->setStyleSheet("#spellEdit { border: none; font-size: 12px; color: "
+                       "palette(text); background: palette(base); }");
+
+    gl->addWidget(headFrame);
+    gl->addWidget(txt);
+
+    // Распределение по колонкам
+    if (i <= 2)
+      col1->addWidget(group);
+    else if (i <= 5)
+      col2->addWidget(group);
+    else
+      col3->addWidget(group);
+  }
+
+  col1->addStretch();
+  col2->addStretch();
+  col3->addStretch();
+
+  colsL->addLayout(col1, 1);
+  colsL->addLayout(col2, 1);
+  colsL->addLayout(col3, 1);
+
+  scroll->setWidget(container);
+  mainL->addWidget(scroll);
+
+  tabs->addTab(tab, "Магия");
 }
 
 void CharacterSheet::setupNotesTab(const QJsonObject &data) {
@@ -366,24 +668,6 @@ void CharacterSheet::setupNotesTab(const QJsonObject &data) {
   l->addWidget(notesEdit);
 
   tabs->addTab(tab, "Инфо");
-}
-
-// Конвертация формата TipTap (JSON документ) в простой текст
-// Извлекает текст из параграфов, игнорируя сложное форматирование
-QString CharacterSheet::tipTapToPlain(const QJsonObject &obj) {
-  QString t;
-  if (!obj.contains("data"))
-    return "";
-  QJsonArray c = obj["data"].toObject()["content"].toArray();
-  for (auto bV : c) {
-    auto b = bV.toObject();
-    if (b["type"].toString() == "paragraph") {
-      for (auto cV : b["content"].toArray())
-        t += cV.toObject()["text"].toString();
-      t += "\n";
-    }
-  }
-  return t;
 }
 
 // Конвертация простого текста в структуру TipTap (JSON)
@@ -444,9 +728,69 @@ void CharacterSheet::saveToFile() {
   QJsonObject nt = t["notes-1"].toObject();
   nt["value"] = plainToTipTap(notesEdit->toPlainText());
   t["notes-1"] = nt;
+
+  // Сохранение заклинаний
+  for (auto it = magicEdits.begin(); it != magicEdits.end(); ++it) {
+    QString key = it.key();
+    if (!t.contains(key))
+      t[key] = QJsonObject();
+    QJsonObject spellObj = t[key].toObject();
+    spellObj["value"] = plainToTipTap(it.value()->toPlainText());
+    t[key] = spellObj;
+  }
   data["text"] = t;
 
-  data["text"] = t;
+  // Сохранение шапки магии
+  QJsonObject info = data["info"].toObject();
+  if (!info.contains("charClass"))
+    info["charClass"] = QJsonObject();
+  QJsonObject cc = info["charClass"].toObject();
+  cc["value"] = spellClassEdit->text();
+  info["charClass"] = cc;
+  data["info"] = info;
+
+  QJsonObject sInfo = data["spellsInfo"].toObject();
+
+  if (!sInfo.contains("base"))
+    sInfo["base"] = QJsonObject();
+  QJsonObject base = sInfo["base"].toObject();
+  // Сохраняем код характеристики (int/wis/cha)
+  base["code"] = spellAbilityCombo->currentData().toString();
+  base["label"] = spellAbilityCombo->currentText();
+  sInfo["base"] = base;
+
+  // DC и Bonus считаются автоматически, но сохраняем их как значения
+  if (!sInfo.contains("save"))
+    sInfo["save"] = QJsonObject();
+  QJsonObject save = sInfo["save"].toObject();
+  save["value"] = spellSaveDCEdit->text();
+  sInfo["save"] = save;
+
+  if (!sInfo.contains("mod"))
+    sInfo["mod"] = QJsonObject();
+  QJsonObject mod = sInfo["mod"].toObject();
+  mod["value"] = spellAttackBonusEdit->text();
+  sInfo["mod"] = mod;
+
+  data["spellsInfo"] = sInfo;
+
+  // Сохранение ячеек заклинаний
+  QJsonObject spellsObj = data["spells"].toObject();
+  for (auto it = spellSlotSpins.begin(); it != spellSlotSpins.end(); ++it) {
+    QString key = QString("slots-%1").arg(it.key());
+    if (!spellsObj.contains(key))
+      spellsObj[key] = QJsonObject();
+    QJsonObject slotObj = spellsObj[key].toObject();
+    // LSS формат: value - это макс. кол-во ячеек
+    // Если мы хотим сохранять текущее состояние потраченных, то нужно поле
+    // filled. Но пока сохраняем только максимум, чтобы соответствовать LSS
+    // структуре, либо если пользователь меняет, то это Max. В UI у нас
+    // отображается Max (так как suffix / N). Давайте сохранять значение как
+    // Макс.
+    slotObj["value"] = it.value()->value();
+    spellsObj[key] = slotObj;
+  }
+  data["spells"] = spellsObj;
 
   // Упаковка данных обратно в строковое поле "data" JSON структуры LSS
   QJsonDocument innerDoc(data);
@@ -458,6 +802,57 @@ void CharacterSheet::saveToFile() {
   if (f.open(QIODevice::WriteOnly)) {
     f.write(QJsonDocument(finalRoot).toJson());
     f.close();
+  }
+}
+
+void CharacterSheet::updateSpellCalculations() {
+  // Получаем базовую характеристику (int/wis/cha)
+  QString abilityCode = spellAbilityCombo->currentData().toString();
+  int score = 10;
+  if (statSpins.contains(abilityCode)) {
+    score = statSpins[abilityCode]->value();
+  }
+
+  // Вычисляем модификатор: (Score - 10) / 2
+  int mod = std::floor((score - 10) / 2.0);
+
+  // Бонус мастерства
+  int prof = globalProfSpin->value();
+
+  // DC = 8 + Prof + Mod
+  int dc = 8 + prof + mod;
+  spellSaveDCEdit->setText(QString::number(dc));
+
+  // Attack Bonus = Prof + Mod
+  int bonus = prof + mod;
+  QString bonusStr = (bonus >= 0 ? "+" : "") + QString::number(bonus);
+  spellAttackBonusEdit->setText(bonusStr);
+}
+
+void CharacterSheet::updateSpellSlots(int level, int count) {
+  if (!spellCirclesLayouts.contains(level))
+    return;
+  auto *l = spellCirclesLayouts[level];
+
+  // Очистка старых (удаляем виджеты)
+  QLayoutItem *child;
+  while ((child = l->takeAt(0)) != 0) {
+    if (child->widget())
+      delete child->widget();
+    delete child;
+  }
+
+  // Добавление новых (чекбоксы)
+  for (int j = 0; j < count; ++j) {
+    auto *cb = new QCheckBox();
+    cb->setFixedSize(16, 16);
+    // Стилизация под кружок (можно доработать, но стандартный чекбокс понятен)
+    // В CSS Qt чекбокс indicator можно стилизовать
+    cb->setStyleSheet(
+        "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid "
+        "palette(text); border-radius: 7px; background: transparent; }"
+        "QCheckBox::indicator:checked { background: palette(text); }");
+    l->addWidget(cb);
   }
 }
 

@@ -7,14 +7,29 @@ class QHBoxLayout;
 // Класс главного окна приложения
 // Отвечает за хранение и отображение колонок с трекерами инициативы
 class MainWindow : public QWidget {
-    Q_OBJECT
+  Q_OBJECT
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
-private slots:
-    // Слот добавления новой колонки (Группы)
-    void addColumn();
+  explicit MainWindow(QWidget *parent = nullptr);
+  ~MainWindow();
+
+protected:
+  // Перехват события закрытия окна для сохранения состояния
+  void closeEvent(QCloseEvent *event) override;
+
 private:
-    QHBoxLayout *columnsLayout; // Лейаут для горизонтального размещения колонок
+  // Сохранение текущего состояния (колонки, открытые персонажи) в JSON
+  void saveState();
+  // Восстановление состояния из JSON при запуске
+  void loadState();
+  // Копирование файла персонажа в локальную папку data
+  QString copyToData(const QString &sourcePath);
+private slots:
+  // Слот добавления новой колонки (Группы)
+  void addColumn();
+  // Очистка всех данных и состояния приложения с подтверждением
+  void clearAllData();
+
+private:
+  QHBoxLayout *columnsLayout; // Лейаут для горизонтального размещения колонок
 };
 #endif

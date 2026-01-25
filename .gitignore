@@ -27,3 +27,4 @@ cmake-build-*/
 *.swo
 *.user
 dnd_tracker
+compile_flags.txt
