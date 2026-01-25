@@ -27,7 +27,6 @@ cmake-build-*/
 *.swo
 *.user
 dnd_tracker
-compile_flags.txt
-dnd_state.json
+.txt
 *.json
 *.pdf
