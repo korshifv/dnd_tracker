@@ -5,6 +5,8 @@
 class QVBoxLayout;
 class QLineEdit;
 
+// Виджет колонки трекера
+// Отвечает за отобажение группы персонажей (например, Игроки или Враги) и управление ими
 class TrackerColumn : public QFrame {
     Q_OBJECT
 public:
@@ -12,16 +14,19 @@ public:
     ~TrackerColumn();
 
 protected:
+    // События Drag & Drop для перетаскивания карточек между колонками
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
 
 public slots:
+    // Добавить новую пустую карточку персонажа в колонку
     void addCharacter();
+    // Сортировать карточки по значению инициативы (от большего к меньшему)
     void sortInitiative();
 
 private:
-    QVBoxLayout *listLayout;
-    QLineEdit *titleEdit;
+    QVBoxLayout *listLayout; // Вертикальный список карточек
+    QLineEdit *titleEdit;    // Редактируемый заголовок колонки
 };
 #endif

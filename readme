@@ -1,9 +1,0 @@
-dnd_tracker/
-├── CMakeLists.txt
-├── main.cpp
-├── MainWindow.h
-├── MainWindow.cpp
-├── TrackerColumn.h
-├── TrackerColumn.cpp
-├── CharacterCard.h
-└── CharacterCard.cpp

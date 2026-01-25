@@ -14,14 +14,13 @@
 #include <QMessageBox>
 
 CharacterCard::CharacterCard(QWidget *parent) : QFrame(parent) {
-    // ПРОБЛЕМА: setAttribute() очень дорогая операция. Лучше сделать это один раз в стиле или нарисовать вручную
-    // Делаем саму основу прозрачной, чтобы border-radius не давал черных углов
+    // Оптимизация: делаем фон прозрачным, чтобы избежать черных углов при скруглении границ
     setAttribute(Qt::WA_TranslucentBackground);
     setObjectName("CharacterCard");
     
-    // ПРОБЛЕМА: Многократное применение setStyleSheet для отдельных виджетов переперспарсивает CSS каждый раз
-    // РЕКОМЕНДАЦИЯ: Вынести стили в QSS-файл или централизовать в QApplication::setStyleSheet()
-    // СТИЛИ: Белая карточка, черные рамки, черный текст
+    // Централизованная настройка стилей для элементов внутри карточки
+    // QFrame#CharacterCard - контейнер всей карточки (прозрачный)
+    // QFrame#cardBody - видимая часть с белым фоном и рамкой
     setStyleSheet(
         "QFrame#CharacterCard { background: transparent; border: none; }"
         "QWidget { color: black; }"
@@ -31,8 +30,6 @@ CharacterCard::CharacterCard(QWidget *parent) : QFrame(parent) {
     );
     setFixedHeight(185);
 
-    // ПРОБЛЕМА: QGraphicsOpacityEffect очень дорога для производительности! Используется GPU в некоторых системах
-    // РЕКОМЕНДАЦИЯ: Для простой анимации прозрачности использовать QPainter или просто убрать эффект
     opacityEffect = new QGraphicsOpacityEffect(this);
     setGraphicsEffect(opacityEffect);
 
@@ -51,7 +48,6 @@ CharacterCard::CharacterCard(QWidget *parent) : QFrame(parent) {
     // --- ВЕРХНИЙ РЯД: Аватар, Инициатива, Имя, LSS ---
     auto *topLayout = new QHBoxLayout();
     
-    // ПРОБЛЕМА: avatarBtn не хранится как member-переменная, но позже нельзя будет изменить цвет
     QPushButton *avatarBtn = new QPushButton();
     avatarBtn->setFixedSize(32, 32);
     setRandomColor(avatarBtn); // Рандомный цвет кружка
@@ -139,16 +135,15 @@ void CharacterCard::openLssFile() {
     }
 }
 
+// Загрузка данных из JSON файла LSS
 void CharacterCard::loadLssJson(const QByteArray &rawData) {
-    // ПРОБЛЕМА: Нет обработки ошибок парсинга JSON - просто молча возвращаемся
-    // РЕКОМЕНДАЦИЯ: Показать пользователю сообщение об ошибке
     QJsonDocument doc = QJsonDocument::fromJson(rawData);
     if (doc.isNull()) return;
 
-    rootLssJson = doc.object(); // Сохраняем весь файл целиком для будущего экспорта
+    rootLssJson = doc.object(); // Сохраняем весь корневой объект файла LSS
     
-    // Двойной парсинг LSS: вытаскиваем строку data и парсим её как объект
-    // Это необходимо для совместимости с форматом LSS, где персональные данные хранятся как JSON-строка
+    // Специфика формата LSS: основные данные хранятся внутри строкового поля "data"
+    // Необходимо извлечь эту строку и распарсить её как отдельный JSON документ
     QString innerJsonStr = rootLssJson["data"].toString();
     QJsonDocument innerDoc = QJsonDocument::fromJson(innerJsonStr.toUtf8());
     if (innerDoc.isNull()) return;
@@ -175,18 +170,15 @@ void CharacterCard::showFullSheet() {
         QMessageBox::warning(this, "Внимание", "Сначала импортируйте JSON файл персонажа!");
         return;
     }
-    // Вызываем чарник, передавая и корень файла (для сейва) и данные персонажа
+    // Открываем диалог, передавая указатель на текущую карточку как родителя
+    // Передаем полную структуру (root) и распарсенные данные (characterData)
     CharacterSheet *sheet = new CharacterSheet(rootLssJson, characterData, this);
     sheet->show();
-}// ПРОБЛЕМА: setStyleSheet дорогая операция, лучше использовать setPalette() для цвета
-    // ПРОБЛЕМА: Пользователь не может повторно сгенерировать цвет - нет связи с UI
-    
+}
 
 void CharacterCard::setRandomColor(QWidget* widget) {
     int r = QRandomGenerator::global()->bounded(160, 256);
     int g = QRandomGenerator::global()->bounded(160, 256);
-    // ПРОБЛЕМА: QPropertyAnimation на каждый виджет создает новый объект, не переиспользует
-    // ПРОБЛЕМА: DeleteWhenStopped не гарантирует удаление при краше (утечка памяти в редких случаях)
     int b = QRandomGenerator::global()->bounded(160, 256);
     widget->setStyleSheet(QString("border: 2px solid black; border-radius: 16px; background-color: rgb(%1,%2,%3);").arg(r).arg(g).arg(b));
 }
@@ -206,13 +198,13 @@ void CharacterCard::applyDamage() {
     modSpin->setValue(0);
 }
 
-voiПРОБЛЕМА: mousePressEvent объявлена, но не используется для реального Drag&Drop
-// РЕКОМЕНДАЦИЯ: Либо реализовать его (QDrag + setMimeData), либо удалить заглушку
+void CharacterCard::applyHeal() {
     hpSpin->setValue(hpSpin->value() + modSpin->value());
     modSpin->setValue(0);
 }
 
-// Заглушка для мыши (нужна для корректной работы Drag&Drop в будущем)
+// Обработчик нажатия мыши
+// Необходим для перехвата событий, которые могут инициировать Drag&Drop операцию
 void CharacterCard::mousePressEvent(QMouseEvent *event) {
     QFrame::mousePressEvent(event);
 }

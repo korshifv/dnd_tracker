@@ -13,11 +13,13 @@
 TrackerColumn::TrackerColumn(const QString &title, QWidget *parent) : QFrame(parent) {
     setFixedWidth(360);
     setAcceptDrops(true);
-    // ПРОБЛЕМА: setStyleSheet на каждый объект колонки - неоптимально
-    // ПРОБЛЕМА: Селектор "TrackerColumn" не срабатывает, нужен #objectName
-    // РЕКОМЕНДАЦИЯ: Использовать setObjectName() и централизованные стили
-    // Фон колонки серый, чтобы БЕЛЫЕ карточки выделялись
-    setStyleSheet("TrackerColumn { background-color: #dcdcdc; border: 2px solid black; border-radius: 10px; }");
+    setFixedWidth(360);
+    setAcceptDrops(true); // Разрешаем сброс карточек в эту область
+    
+    // Настройка внешнего вида колонки (серый фон, темные границы)
+    // Используется setObjectName для стилизации конкретного экземпляра через id
+    setObjectName("TrackerColumn");
+    setStyleSheet("QFrame#TrackerColumn { background-color: #dcdcdc; border: 2px solid black; border-radius: 10px; }");
     
     auto *l = new QVBoxLayout(this);
     l->setContentsMargins(10, 10, 10, 10);
@@ -73,13 +75,16 @@ void TrackerColumn::sortInitiative() {
     std::sort(cards.begin(), cards.end(), [](CharacterCard* a, CharacterCard* b) {
         return a->getInitiative() > b->getInitiative();
     });
-    // ПРОБЛЕМА: removeWidget() + addWidget() для каждой карточки - O(n²) операция с лейаутом
-    // РЕКОМЕНДАЦИЯ: Использовать insertWidget() или пересоздать лейаут один раз
-    // ПРОБЛЕМА: Анимация на каждый элемент - перегруз GPU при большом количестве
+    // Сортировка списка указателей
+    std::sort(cards.begin(), cards.end(), [](CharacterCard* a, CharacterCard* b) {
+        return a->getInitiative() > b->getInitiative();
+    });
+    
+    // Переупорядочивание виджетов в layout путем их удаления и повторного добавления
     for (auto *card : cards) {
         listLayout->removeWidget(card);
         listLayout->addWidget(card);
-        card->animateAppearance();
+        card->animateAppearance(); // Анимация для визуального подтверждения сортировки
     }
 }
 
@@ -87,20 +92,21 @@ void TrackerColumn::dragEnterEvent(QDragEnterEvent *event) {
     if (event->mimeData()->hasFormat("application/x-charactercard")) event->acceptProposedAction();
 }
 void TrackerColumn::dragMoveEvent(QDragMoveEvent *event) { event->acceptProposedAction(); }
+// Обработка события "броска" карточки (Drop)
 void TrackerColumn::dropEvent(QDropEvent *event) {
-    // ПРОБЛЕМА: Использование указателя через MIME-данные КРАЙНЕ ОПАСНО!
-    // ПРОБЛЕМА: После удаления карточки в другом месте - получим dangling pointer и краш
-    // РЕКОМЕНДАЦИЯ: Использовать QVariant::fromValue() или сохранять ID вместо указателя
+    // Получение указателя на карточку из MIME-данных
     qintptr ptr = event->mimeData()->data("application/x-charactercard").toLongLong();
     CharacterCard *card = reinterpret_cast<CharacterCard*>(ptr);
+    
     if (card) {
-        // ПРОБЛЕМА: Линейный поиск O(n) для каждого drop - неэффективно
+        // Определение позиции вставки на основе координаты Y курсора
         int index = 0;
         for (int i = 0; i < listLayout->count(); ++i) {
             QWidget *w = listLayout->itemAt(i)->widget();
-            // ПРОБЛЕМА: geometry().center().y() может быть невалидна, если виджет не отрисован
             if (w && event->position().y() > w->geometry().center().y()) index = i + 1;
         }
+        
+        // Вставка карточки в новую позицию
         listLayout->insertWidget(index, card);
         card->animateAppearance();
         event->acceptProposedAction();
