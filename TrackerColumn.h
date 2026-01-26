@@ -4,6 +4,7 @@
 
 class QVBoxLayout;
 class QLineEdit;
+class CharacterCard;
 
 // Виджет колонки трекера
 // Отвечает за отобажение группы персонажей (например, Игроки или Враги) и
@@ -27,6 +28,10 @@ public slots:
   void loadCharacter(const QString &filePath);
   // Сортировать карточки по значению инициативы (от большего к меньшему)
   void sortInitiative();
+
+  // Геттеры для данных (для сохранения состояния)
+  QString getTitle() const;
+  QList<CharacterCard *> getCards() const;
 
 private:
   QVBoxLayout *listLayout; // Вертикальный список карточек

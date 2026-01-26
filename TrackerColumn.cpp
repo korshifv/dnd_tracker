@@ -141,4 +141,17 @@ void TrackerColumn::loadCharacter(const QString &filePath) {
     card->setFilePath(filePath);
   }
 }
+
+QString TrackerColumn::getTitle() const { return titleEdit->text(); }
+
+QList<CharacterCard *> TrackerColumn::getCards() const {
+  QList<CharacterCard *> cards;
+  for (int i = 0; i < listLayout->count(); ++i) {
+    if (auto *card =
+            qobject_cast<CharacterCard *>(listLayout->itemAt(i)->widget()))
+      cards.append(card);
+  }
+  return cards;
+}
+
 TrackerColumn::~TrackerColumn() {}

@@ -21,8 +21,6 @@ private:
   void saveState();
   // Восстановление состояния из JSON при запуске
   void loadState();
-  // Копирование файла персонажа в локальную папку data
-  QString copyToData(const QString &sourcePath);
 private slots:
   // Слот добавления новой колонки (Группы)
   void addColumn();

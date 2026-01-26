@@ -1,5 +1,7 @@
 #include "CharacterCard.h"
 #include "CharacterSheet.h"
+#include "FileUtils.h"
+#include <QDrag>
 #include <QFileDialog>
 #include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
@@ -7,6 +9,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -143,21 +147,7 @@ void CharacterCard::openLssFile() {
   if (path.isEmpty())
     return;
 
-  // Persistence: Копируем файл в папку data
-  QDir dir("data");
-  if (!dir.exists())
-    dir.mkpath(".");
-
-  QFileInfo fi(path);
-  QString newPath = dir.filePath(fi.fileName());
-
-  // Копируем (перезаписываем)
-  if (QFileInfo(path).absoluteFilePath() !=
-      QFileInfo(newPath).absoluteFilePath()) {
-    if (QFile::exists(newPath))
-      QFile::remove(newPath);
-    QFile::copy(path, newPath);
-  }
+  QString newPath = FileUtils::copyToData(path);
 
   QFile file(newPath);
   if (file.open(QIODevice::ReadOnly)) {
@@ -169,8 +159,11 @@ void CharacterCard::openLssFile() {
 // Загрузка данных из JSON файла LSS
 void CharacterCard::loadLssJson(const QByteArray &rawData) {
   QJsonDocument doc = QJsonDocument::fromJson(rawData);
-  if (doc.isNull())
+  if (doc.isNull()) {
+    QMessageBox::warning(this, "Ошибка",
+                         "Не удалось распарсить JSON файл персонажа.");
     return;
+  }
 
   rootLssJson = doc.object(); // Сохраняем весь корневой объект файла LSS
 
@@ -196,9 +189,6 @@ void CharacterCard::loadLssJson(const QByteArray &rawData) {
   int init = vitality["initiative"].toObject()["value"].toInt();
   if (init != 0)
     initSpin->setValue(init);
-
-  QMessageBox::information(this, "Успех",
-                           "Персонаж " + nameEdit->text() + " импортирован!");
 }
 
 void CharacterCard::showFullSheet() {
@@ -250,10 +240,33 @@ void CharacterCard::applyHeal() {
 }
 
 // Обработчик нажатия мыши
-// Необходим для перехвата событий, которые могут инициировать Drag&Drop
-// операцию
 void CharacterCard::mousePressEvent(QMouseEvent *event) {
-  QFrame::mousePressEvent(event);
+  if (event->button() == Qt::LeftButton) {
+    // Сохраняем начальную позицию для старта Drag & Drop
+    event->accept();
+  } else {
+    QFrame::mousePressEvent(event);
+  }
+}
+
+void CharacterCard::mouseMoveEvent(QMouseEvent *event) {
+  if (!(event->buttons() & Qt::LeftButton))
+    return;
+
+  QDrag *drag = new QDrag(this);
+  QMimeData *mimeData = new QMimeData;
+
+  // Передаем указатель на текущую карточку как MIME-данные
+  mimeData->setData("application/x-charactercard",
+                    QByteArray::number((qintptr)this));
+
+  drag->setMimeData(mimeData);
+
+  // Можно добавить "фантомное" изображение карточки при перетаскивании
+  drag->setPixmap(grab());
+  drag->setHotSpot(event->position().toPoint());
+
+  drag->exec(Qt::MoveAction);
 }
 
 CharacterCard::~CharacterCard() {}

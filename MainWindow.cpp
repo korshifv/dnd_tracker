@@ -95,24 +95,14 @@ void MainWindow::saveState() {
       continue;
 
     QJsonObject colObj;
-    colObj["title"] = col->findChild<QLineEdit *>()->text();
+    colObj["title"] = col->getTitle();
 
     QJsonArray cardsArr;
-    // Ищем лайаут списка внутри колонки (он во внутреннем виджете ScrollArea)
-    QScrollArea *sa = col->findChild<QScrollArea *>();
-    if (sa && sa->widget()) {
-      QVBoxLayout *listLO = sa->widget()->findChild<QVBoxLayout *>();
-      if (listLO) {
-        for (int j = 0; j < listLO->count(); ++j) {
-          auto *card =
-              qobject_cast<CharacterCard *>(listLO->itemAt(j)->widget());
-          if (card && !card->getFilePath().isEmpty()) {
-            QJsonObject cardObj;
-            cardObj["path"] = card->getFilePath();
-            // Можно добавить сохранение хп/инициативы, если нужно
-            cardsArr.append(cardObj);
-          }
-        }
+    for (auto *card : col->getCards()) {
+      if (!card->getFilePath().isEmpty()) {
+        QJsonObject cardObj;
+        cardObj["path"] = card->getFilePath();
+        cardsArr.append(cardObj);
       }
     }
     colObj["cards"] = cardsArr;
@@ -126,31 +116,21 @@ void MainWindow::saveState() {
   }
 }
 
-QString MainWindow::copyToData(const QString &sourcePath) {
-  QDir dir("data");
-  if (!dir.exists())
-    dir.mkpath(".");
-
-  QFileInfo fi(sourcePath);
-  QString newPath = dir.filePath(fi.fileName());
-
-  // Если файл уже есть в data, считаем его актуальным (или перезаписываем)
-  // В данном случае, если пользователь открыл файл извне, копируем его в data
-  if (QFileInfo(sourcePath).absoluteFilePath() !=
-      QFileInfo(newPath).absoluteFilePath()) {
-    if (QFile::exists(newPath))
-      QFile::remove(newPath);
-    QFile::copy(sourcePath, newPath);
-  }
-  return newPath;
-}
-
 void MainWindow::loadState() {
   QFile file("dnd_state.json");
   if (!file.open(QIODevice::ReadOnly))
     return;
 
-  QJsonObject state = QJsonDocument::fromJson(file.readAll()).object();
+  QJsonParseError error;
+  QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &error);
+  if (doc.isNull()) {
+    QMessageBox::warning(this, "Ошибка загрузки",
+                         "Не удалось прочитать файл состояния: " +
+                             error.errorString());
+    return;
+  }
+
+  QJsonObject state = doc.object();
   QJsonArray columnsArr = state["columns"].toArray();
 
   for (auto colVal : columnsArr) {

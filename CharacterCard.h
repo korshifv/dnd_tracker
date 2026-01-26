@@ -34,13 +34,14 @@ public:
   void loadLssJson(const QByteArray &rawData);
 
 protected:
-  // Обработка клика мыши (используется для перетаскивания карточки)
+  // Обработка клика мыши (используется для инициации перетаскивания)
   void mousePressEvent(QMouseEvent *event) override;
+  void mouseMoveEvent(QMouseEvent *event) override;
 
 private slots:
-  void applyDamage(); // Применить урон (вычесть из HP)
-  void applyHeal();   // Применить лечение (добавить к HP)
-  void openLssFile(); // Открыть диалог выбора JSON файла персонажа
+  void applyDamage();   // Применить урон (вычесть из HP)
+  void applyHeal();     // Применить лечение (добавить к HP)
+  void openLssFile();   // Открыть диалог выбора JSON файла персонажа
   void showFullSheet(); // Открыть полное окно редактирования персонажа
                         // (CharacterSheet)
 
@@ -54,8 +55,8 @@ private:
   QLabel *acLabel;       // Класс доспеха (Armor Class)
 
   // Хранение данных LSS
-  QJsonObject rootLssJson; // Исходный файл целиком (нужен для сохранения
-                           // структуры при экспорте)
+  QJsonObject rootLssJson;   // Исходный файл целиком (нужен для сохранения
+                             // структуры при экспорте)
   QJsonObject characterData; // Распаршенные игровые данные персонажа
   QString currentFilePath;   // Путь к файлу персонажа
 

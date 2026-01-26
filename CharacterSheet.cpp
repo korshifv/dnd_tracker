@@ -136,6 +136,8 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
     styleFile.close();
   }
 
+  setAttribute(Qt::WA_DeleteOnClose);
+
   auto *mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(10, 10, 10, 10);
   mainLayout->setSpacing(5);
