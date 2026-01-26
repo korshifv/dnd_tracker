@@ -1,0 +1,52 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.0'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
+
+    - name: Set up MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Deploy Qt Dependencies
+      run: |
+        windeployqt --release --no-translations --compiler-runtime build/Release/dnd_tracker.exe
+
+    - name: Package Artifact
+      run: |
+        mkdir dist
+        copy build/Release/dnd_tracker.exe dist/
+        copy styles.qss dist/
+        # Also copy all deployed DLLs from the build directory
+        xcopy /E /I build\Release\*.dll dist\
+        xcopy /E /I build\Release\platforms dist\platforms\
+        xcopy /E /I build\Release\styles dist\styles\
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dnd_tracker_windows
+        path: dist/
