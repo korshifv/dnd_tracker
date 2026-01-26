@@ -3,9 +3,9 @@
 
 #include <QDialog>
 #include <QJsonObject>
+#include <QList>
 #include <QMap>
 
-// Форвард-декларации для ускорения сборки
 class QTabWidget;
 class QSpinBox;
 class QLabel;
@@ -14,119 +14,151 @@ class QTextEdit;
 class QLineEdit;
 class QComboBox;
 class QCheckBox;
+class QFrame;
+class QGridLayout;
 class QVBoxLayout;
 class QHBoxLayout;
+class QScrollArea;
 
-// Диалоговое окно редактирования персонажа
+// Стуктура для хранения данных оружия
+struct WeaponData {
+  QString name;
+  QString ability; // "str", "dex", etc.
+  bool isProf;
+  int magicBonus;
+  QString damage;
+  QString notes;
+};
+
+// Компактный диалог редактирования оружия
+class WeaponEditorDialog : public QDialog {
+  Q_OBJECT
+public:
+  WeaponEditorDialog(const WeaponData &data, int profBonus,
+                     const QMap<QString, int> &statMods,
+                     QWidget *parent = nullptr);
+  WeaponData getWeaponData() const;
+  bool isDeleted() const { return deleted; }
+
+private slots:
+  void updateHitBonus();
+
+private:
+  QLineEdit *nameEdit;
+  QComboBox *abilityCombo;
+  QCheckBox *profCheck;
+  QSpinBox *magicSpin;
+  QLineEdit *dmgEdit;
+  QTextEdit *notesEdit;
+  QLabel *hitBonusLabel;
+
+  int pb;
+  QMap<QString, int> mods;
+  bool deleted = false;
+};
+
 class CharacterSheet : public QDialog {
   Q_OBJECT
 public:
-  // Конструктор принимает оригинал файла и распарсенные данные для сохранения
-  // совместимости структуры JSON
   explicit CharacterSheet(const QJsonObject &root, const QJsonObject &data,
                           QWidget *parent = nullptr);
   virtual ~CharacterSheet();
 
 private slots:
-  // Пересчет всех модификаторов и бонусов
-  // Принимает int (сигнатура для QSpinBox::valueChanged), но не всегда
-  // использует
   void updateAllCalculations(int = 0);
-  // Переключает уровень владения навыком (Не владею -> Владею ->
-  // Компетентность)
   void toggleSkillProficiency(const QString &key);
-  // Переключает владение спасброском (Вкл/Выкл)
   void toggleSaveProficiency(const QString &key);
-  // Сохраняет изменения персонажа обратно в JSON файл (формат LSS)
   void saveToFile();
-  // Авторасчет параметров заклинаний (DC, Bonus)
   void updateSpellCalculations();
-  // Обновление кружочков ячеек при изменении спинбокса
   void updateSpellSlots(int level, int count);
+  void addNewWeapon();
+  void editWeapon(int index);
+  void expandAttacksBlock();
+  void shrinkAttacksBlock();
 
 private:
-  // Методы настройки вкладок интерфейса
-  void
-  setupGeneralTab(const QJsonObject &data); // Вкладка "Основа" (Характеристики)
-  void setupSkillsTab(const QJsonObject &data); // Вкладка "Навыки"
-  void setupCombatTab(
-      const QJsonObject &data); // Вкладка "Бой" (Заклинания и Оружие)
-  void
-  setupMagicTab(const QJsonObject &data); // Вкладка "Магия" (Список заклинаний)
-  void setupNotesTab(
-      const QJsonObject &data); // Вкладка "Инфо" (Инвентарь и Заметки)
+  void setupMainLayout(QWidget *dashboard, const QJsonObject &data);
+  QWidget *createStatBlock(const QString &label, const QString &statKey,
+                           int score);
+  QWidget *createSavingThrowsBlock(const QJsonObject &data);
+  QWidget *createSkillsBlock(const QJsonObject &data);
+  QWidget *createCombatStatsBlock(const QJsonObject &data);
+  QWidget *createHPBlock(const QJsonObject &data);
+  QWidget *createPersonalityBlock(const QJsonObject &data);
+  QWidget *createFeaturesBlock(const QJsonObject &data);
+  QWidget *createEquipmentBlock(const QJsonObject &data);
+  QWidget *createAttacksBlock(const QJsonObject &data);
+  QWidget *createHeaderBlock(const QJsonObject &data);
+  void setupMagicTab(const QJsonObject &data);
 
-  // Вспомогательные функции
-  QString tipTapToPlain(
-      const QJsonObject
-          &obj); // Конвертация JSON формата редактора TipTap в обычный текст
-  QJsonObject plainToTipTap(const QString &text); // Конвертация обычного текста
-                                                  // обратно в формат TipTap
-  int calculateMod(int score); // Расчет модификатора: (значение - 10) / 2
+  void refreshWeaponList();
 
-  // Создает визуальный блок для одной характеристики (Сила, Ловкость и т.д.)
-  QWidget *createStatBox(const QString &label, int score, bool isProfSave,
-                         const QString &statKey);
+  QString tipTapToPlain(const QJsonObject &obj);
+  QJsonObject plainToTipTap(const QString &text);
 
   QTabWidget *tabs;
-  QSpinBox *globalProfSpin; // Поле "Бонус мастерства" в верхней панели
+  QSpinBox *globalProfSpin;
+  QCheckBox *inspirationCheck;
+  QLineEdit *passivePerceptionLabel;
 
-  // Хранение оригинальных данных для сохранения структуры файла при экспорте
   QJsonObject originalRoot;
   QJsonObject originalData;
 
-  // Связь логических ключей (например, "str") с элементами интерфейса
-  QMap<QString, QSpinBox *> statSpins; // Поля ввода значений характеристик
-  QMap<QString, QLabel *> modLabels;   // Метки отображения модификаторов (+3)
-  QMap<QString, QLabel *> saveBonusLabels; // Метки бонуса спасброска
-  QMap<QString, QSpinBox *> skillSpins;    // Поля итоговых значений навыков
-  QMap<QString, QLabel *>
-      skillCalcLabels; // Детализация расчета навыка (+мод +мастерство)
-  QMap<QString, QPushButton *>
-      skillProfBtns; // Кнопки переключения владения навыком
-  QMap<QString, QPushButton *>
-      saveProfBtns; // Кнопки переключения владения спасом
+  QMap<QString, QSpinBox *> statSpins;
+  QMap<QString, QLineEdit *> modLabels;
+  QMap<QString, QLineEdit *> saveBonusLabels;
+  QMap<QString, QSpinBox *> skillSpins;
+  QMap<QString, QLabel *> skillCalcLabels;
+  QMap<QString, QPushButton *> skillProfBtns;
+  QMap<QString, QPushButton *> saveProfBtns;
 
-  // Текстовые редакторы
-  QTextEdit *traitsEdit;    // Особенности и умения
-  QTextEdit *inventoryEdit; // Инвентарь
-  QTextEdit *notesEdit;     // Заметки
-  QLineEdit *nameEditField; // Редактирование имени
+  QTextEdit *traitsEdit;
+  QTextEdit *idealsEdit;
+  QTextEdit *bondsEdit;
+  QTextEdit *flawsEdit;
+  QTextEdit *featuresEdit;
+  QTextEdit *inventoryEdit;
 
-  // Редакторы заклинаний (ключ - spells-level-N)
+  QLineEdit *nameEditField;
+  QLineEdit *classEdit;
+  QLineEdit *subclassEdit;
+  QLineEdit *raceEdit;
+  QLineEdit *backgroundEdit;
+  QLineEdit *alignmentEdit;
+  QSpinBox *levelSpin;
+  QLineEdit *expEdit;
+  QLineEdit *playerNameEdit;
+
+  QSpinBox *acSpin;
+  QLineEdit *initEdit;
+  QLineEdit *speedEdit;
+  QSpinBox *hpMaxSpin;
+  QSpinBox *hpCurrentSpin;
+  QSpinBox *hpTempSpin;
+  QLineEdit *hdValueEdit;
+
+  QList<QPushButton *> deathSavesSuccess;
+  QList<QPushButton *> deathSavesFail;
+
   QMap<QString, QTextEdit *> magicEdits;
-
-  // Элементы заголовка вкладки Магия
   QLineEdit *spellClassEdit;
-  QComboBox
-      *spellAbilityCombo; // Выбор характеристики (Интеллект/Мудрость/Харизма)
+  QComboBox *spellAbilityCombo;
   QLineEdit *spellSaveDCEdit;
   QLineEdit *spellAttackBonusEdit;
-
-  // Ячейки заклинаний (Уровень -> Спинбокс)
   QMap<int, QSpinBox *> spellSlotSpins;
-  // Лейауты для кружочков ячеек (Уровень -> Layout)
   QMap<int, QHBoxLayout *> spellCirclesLayouts;
 
-  // Структуры данных состояния
   struct SkillInfo {
     QString baseStat;
     int profLevel;
   };
-  QMap<QString, SkillInfo>
-      skillsState; // Состояние навыков (базовая хар-ка + уровень владения)
-  QMap<QString, bool> savesState; // Состояние владения спасбросками (да/нет)
+  QMap<QString, SkillInfo> skillsState;
+  QMap<QString, bool> savesState;
 
-  // Структура для отображения оружия в списке
-  struct WeaponUI {
-    QLineEdit *nameInput;
-    QLabel *hitLabel;
-    QLineEdit *dmgInput;
-    QString ability;
-    bool isProf;
-    int magicBonus;
-  };
-  QList<WeaponUI> weaponsUI; // Список всего оружия персонажа
+  QList<WeaponData> weaponsData;
+  QVBoxLayout *weaponListLayout;
+  QGridLayout *attacksGrid;
+  QFrame *attacksBlockFrame;
 };
 
 #endif // CHARACTERSHEET_H

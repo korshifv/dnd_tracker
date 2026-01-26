@@ -1,6 +1,7 @@
 #include "CharacterSheet.h"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
@@ -12,848 +13,1013 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
+#include <QStyle>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <cmath>
 
+// --- WeaponEditorDialog Implementation ---
+WeaponEditorDialog::WeaponEditorDialog(const WeaponData &data, int profBonus,
+                                       const QMap<QString, int> &statMods,
+                                       QWidget *parent)
+    : QDialog(parent), pb(profBonus), mods(statMods) {
+
+  setWindowTitle("Редактирование оружия");
+  setFixedWidth(400);
+
+  auto *l = new QVBoxLayout(this);
+  l->setSpacing(15);
+  l->setContentsMargins(20, 20, 20, 20);
+
+  nameEdit = new QLineEdit(data.name);
+  nameEdit->setPlaceholderText("Название оружия");
+  nameEdit->setStyleSheet("font-size: 18px; font-weight: bold;");
+  l->addWidget(nameEdit);
+
+  auto *grid = new QGridLayout();
+  grid->addWidget(new QLabel("Характеристика:"), 0, 0);
+  abilityCombo = new QComboBox();
+  abilityCombo->addItem("Нет", "none");
+  abilityCombo->addItem("Сила", "str");
+  abilityCombo->addItem("Ловкость", "dex");
+  abilityCombo->addItem("Тело", "con");
+  abilityCombo->addItem("Интеллект", "int");
+  abilityCombo->addItem("Мудрость", "wis");
+  abilityCombo->addItem("Харизма", "cha");
+  abilityCombo->setCurrentIndex(abilityCombo->findData(data.ability));
+  grid->addWidget(abilityCombo, 0, 1);
+
+  profCheck = new QCheckBox("Владение");
+  profCheck->setChecked(data.isProf);
+  grid->addWidget(profCheck, 1, 0);
+
+  grid->addWidget(new QLabel("Доп. бонус:"), 1, 1);
+  magicSpin = new QSpinBox();
+  magicSpin->setRange(-10, 10);
+  magicSpin->setValue(data.magicBonus);
+  grid->addWidget(magicSpin, 1, 2);
+
+  l->addLayout(grid);
+
+  hitBonusLabel = new QLabel("Итоговый бонус: +0");
+  hitBonusLabel->setStyleSheet("color: palette(highlight); font-size: 14px;");
+  l->addWidget(hitBonusLabel);
+
+  l->addWidget(new QLabel("Урон / Вид:"));
+  dmgEdit = new QLineEdit(data.damage);
+  dmgEdit->setPlaceholderText("например: 1к8 колющий");
+  l->addWidget(dmgEdit);
+
+  l->addWidget(new QLabel("Заметки:"));
+  notesEdit = new QTextEdit(data.notes);
+  notesEdit->setMaximumHeight(100);
+  l->addWidget(notesEdit);
+
+  auto *btns = new QHBoxLayout();
+  auto *delBtn = new QPushButton("УДАЛИТЬ");
+  delBtn->setObjectName("delBtn");
+  delBtn->setStyleSheet(
+      "QPushButton { color: #d32f2f; border: 1px solid #d32f2f; padding: 8px; "
+      "border-radius: 4px; } "
+      "QPushButton:hover { background: rgba(211, 47, 47, 0.1); }");
+  connect(delBtn, &QPushButton::clicked, this, [this]() {
+    deleted = true;
+    accept();
+  });
+
+  auto *okBtn = new QPushButton("ОК");
+  okBtn->setObjectName("saveBtn");
+  connect(okBtn, &QPushButton::clicked, this, &QDialog::accept);
+
+  btns->addWidget(delBtn);
+  btns->addStretch();
+  btns->addWidget(okBtn);
+  l->addLayout(btns);
+
+  connect(abilityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, &WeaponEditorDialog::updateHitBonus);
+  connect(profCheck, &QCheckBox::toggled, this,
+          &WeaponEditorDialog::updateHitBonus);
+  connect(magicSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          &WeaponEditorDialog::updateHitBonus);
+
+  updateHitBonus();
+}
+
+void WeaponEditorDialog::updateHitBonus() {
+  QString ab = abilityCombo->currentData().toString();
+  int m = (ab == "none") ? 0 : mods.value(ab, 0);
+  int total = m + (profCheck->isChecked() ? pb : 0) + magicSpin->value();
+  hitBonusLabel->setText(
+      QString("Итоговый бонус: %1%2").arg(total >= 0 ? "+" : "").arg(total));
+}
+
+WeaponData WeaponEditorDialog::getWeaponData() const {
+  return {nameEdit->text(),       abilityCombo->currentData().toString(),
+          profCheck->isChecked(), magicSpin->value(),
+          dmgEdit->text(),        notesEdit->toPlainText()};
+}
+
+// --- CharacterSheet Implementation ---
 CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
                                QWidget *parent)
-    : QDialog(parent), originalRoot(root), originalData(data) {
+    : QDialog(parent), originalRoot(root), originalData(data),
+      weaponListLayout(nullptr), attacksBlockFrame(nullptr) {
 
-  setWindowTitle("Редактор персонажа");
-  resize(1000, 950);
-  setStyleSheet("font-family: 'Segoe UI', sans-serif;");
+  setWindowTitle("Редактор: " + data["name"].toObject()["value"].toString());
+  resize(1300, 950);
+
+  QFile styleFile("styles.qss");
+  if (styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    setStyleSheet(styleFile.readAll());
+    styleFile.close();
+  }
 
   auto *mainLayout = new QVBoxLayout(this);
-
-  // ВЕРХНЯЯ ПАНЕЛЬ (Имя и Мастерство)
-  auto *topPanel = new QHBoxLayout();
-
-  nameEditField = new QLineEdit(data["name"].toObject()["value"].toString());
-  nameEditField->setStyleSheet("font-size: 20px; font-weight: bold; border: "
-                               "2px solid palette(mid); padding: 5px; color: "
-                               "palette(text); background: palette(base);");
-  topPanel->addWidget(new QLabel("<b>ИМЯ:</b>"));
-  topPanel->addWidget(nameEditField, 1);
-
-  topPanel->addWidget(new QLabel("<b>БОНУС МАСТЕРСТВА:</b>"));
-  globalProfSpin = new QSpinBox();
-  globalProfSpin->setRange(1, 12);
-  globalProfSpin->setValue(data["proficiency"].toInt());
-  globalProfSpin->setPrefix("+");
-  globalProfSpin->setFixedWidth(80);
-  globalProfSpin->setStyleSheet(
-      "font-size: 18px; font-weight: bold; border: 2px solid palette(mid); "
-      "border-radius: 5px; padding: 5px; color: palette(text); background: "
-      "palette(base);");
-  connect(globalProfSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
-          &CharacterSheet::updateAllCalculations);
-  topPanel->addWidget(globalProfSpin);
-
-  auto *saveBtn = new QPushButton("💾 СОХРАНИТЬ");
-  saveBtn->setStyleSheet("border: 2px solid palette(mid); "
-                         "font-weight: bold; padding: 10px; color: "
-                         "palette(button-text); background: palette(button);");
-  connect(saveBtn, &QPushButton::clicked, this, &CharacterSheet::saveToFile);
-  topPanel->addWidget(saveBtn);
-
-  mainLayout->addLayout(topPanel);
+  mainLayout->setContentsMargins(10, 10, 10, 10);
+  mainLayout->setSpacing(5);
 
   tabs = new QTabWidget(this);
-  // Настройка стилей вкладок через таблицу стилей
-  tabs->setStyleSheet(
-      "QTabWidget::pane { border: 2px solid palette(mid); }"
-      "QTabBar::tab { border: 2px solid palette(mid); "
-      "border-bottom: none; padding: "
-      "12px; font-weight: bold; min-width: "
-      "100px; color: palette(window-text); background: palette(window); }");
 
-  setupGeneralTab(data);
-  setupSkillsTab(data);
-  setupCombatTab(data);
+  auto *charTab = new QWidget();
+  auto *charLayout = new QVBoxLayout(charTab);
+  charLayout->setContentsMargins(5, 5, 5, 5);
+  auto *scroll = new QScrollArea();
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  auto *dashboard = new QWidget();
+  dashboard->setObjectName("dashboard");
+  scroll->setWidget(dashboard);
+  charLayout->addWidget(scroll);
+
+  setupMainLayout(dashboard, data);
+  tabs->addTab(charTab, "ПЕРСОНАЖ");
   setupMagicTab(data);
-  setupNotesTab(data);
-
   mainLayout->addWidget(tabs);
 
-  // Первый запуск расчетов
   updateAllCalculations();
 }
 
-// Конвертация формата TipTap (JSON документ) в простой текст
-// Извлекает текст из параграфов, игнорируя сложное форматирование
-QString CharacterSheet::tipTapToPlain(const QJsonObject &obj) {
-  QString t;
+void CharacterSheet::setupMainLayout(QWidget *dashboard,
+                                     const QJsonObject &data) {
+  auto *l = new QVBoxLayout(dashboard);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->setSpacing(15);
+
+  l->addWidget(createHeaderBlock(data));
+
+  auto *colsL = new QHBoxLayout();
+  colsL->setSpacing(10);
+
+  auto *col1 = new QVBoxLayout();
+  auto *col2 = new QVBoxLayout();
+  auto *col3 = new QVBoxLayout();
+  auto *col4 = new QVBoxLayout();
+
+  QStringList stats = {"str", "dex", "con", "int", "wis", "cha"};
+  QStringList statNames = {"СИЛА", "ЛОВКОСТЬ", "ТЕЛО", "ИНТ", "МУД", "ХАР"};
+  for (int i = 0; i < stats.size(); ++i) {
+    col1->addWidget(createStatBlock(
+        statNames[i], stats[i],
+        data["stats"].toObject()[stats[i]].toObject()["score"].toInt()));
+  }
+  col1->addStretch(1);
+
+  col2->addWidget(createSavingThrowsBlock(data));
+  col2->addWidget(createSkillsBlock(data));
+  col2->addStretch(1);
+
+  col3->addWidget(createCombatStatsBlock(data));
+  col3->addWidget(createHPBlock(data));
+  col3->addWidget(createAttacksBlock(data));
+  col3->addWidget(createEquipmentBlock(data));
+  col3->addStretch(1);
+
+  col4->addWidget(createPersonalityBlock(data));
+  col4->addWidget(createFeaturesBlock(data));
+  col4->addStretch(0);
+
+  colsL->addLayout(col1);
+  colsL->addLayout(col2);
+  colsL->addLayout(col3, 1);
+  colsL->addLayout(col4);
+  l->addLayout(colsL);
+}
+
+QWidget *CharacterSheet::createHeaderBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *grid = new QGridLayout(f);
+  grid->setContentsMargins(10, 10, 10, 10);
+  grid->setSpacing(8);
+  QJsonObject info = data["info"].toObject();
+  nameEditField = new QLineEdit(data["name"].toObject()["value"].toString());
+  nameEditField->setObjectName("charNameEdit");
+
+  classEdit = new QLineEdit(info["charClass"].toObject()["value"].toString());
+  subclassEdit =
+      new QLineEdit(info["charSubclass"].toObject()["value"].toString());
+  backgroundEdit =
+      new QLineEdit(info["background"].toObject()["value"].toString());
+  raceEdit = new QLineEdit(info["race"].toObject()["value"].toString());
+  alignmentEdit =
+      new QLineEdit(info["alignment"].toObject()["value"].toString());
+  expEdit = new QLineEdit(info["experience"].toObject()["value"].toString());
+  playerNameEdit =
+      new QLineEdit(info["playerName"].toObject()["value"].toString());
+  levelSpin = new QSpinBox();
+  levelSpin->setRange(1, 40);
+  levelSpin->setValue(info["level"].toObject()["value"].toInt());
+
+  auto *saveBtn = new QPushButton("💾 СОХРАНИТЬ");
+  saveBtn->setObjectName("saveBtn");
+  saveBtn->setFixedSize(140, 40);
+  connect(saveBtn, &QPushButton::clicked, this, &CharacterSheet::saveToFile);
+
+  auto addF = [&](const QString &label, QWidget *w, int r, int c, int rs = 1,
+                  int cs = 1) {
+    auto *v = new QVBoxLayout();
+    v->setSpacing(1);
+    v->addWidget(w);
+    auto *l = new QLabel(label);
+    l->setProperty("class", "sublabel");
+    v->addWidget(l);
+    grid->addLayout(v, r, c, rs, cs);
+  };
+  addF("ИМЯ ПЕРСОНАЖА", nameEditField, 0, 0, 2, 2);
+  addF("КЛАСС", classEdit, 0, 2);
+  addF("ПРЕДЫСТОРИЯ", backgroundEdit, 0, 3);
+  addF("ИМЯ ИГРОКА", playerNameEdit, 0, 4);
+  addF("РАСА", raceEdit, 1, 2);
+  addF("МИРОВОЗЗРЕНИЕ", alignmentEdit, 1, 3);
+  addF("ОПЫТ", expEdit, 1, 4);
+
+  auto *lvlV = new QVBoxLayout();
+  lvlV->setSpacing(1);
+  lvlV->addWidget(levelSpin);
+  auto *l = new QLabel("УРОВЕНЬ");
+  l->setProperty("class", "sublabel");
+  lvlV->addWidget(l);
+  grid->addLayout(lvlV, 0, 5, 2, 1);
+  grid->addWidget(saveBtn, 0, 6, 2, 1, Qt::AlignCenter);
+
+  grid->setColumnStretch(0, 2);
+  grid->setColumnStretch(2, 1);
+  return f;
+}
+
+QWidget *CharacterSheet::createStatBlock(const QString &label,
+                                         const QString &statKey, int score) {
+  auto *f = new QFrame();
+  f->setFixedSize(90, 100);
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(5, 5, 5, 5);
+  l->setSpacing(0);
+  auto *t = new QLabel(label);
+  t->setAlignment(Qt::AlignCenter);
+  t->setProperty("class", "sublabel");
+  auto *modVal = new QLineEdit("+0");
+  modVal->setAlignment(Qt::AlignCenter);
+  modVal->setObjectName("combatStatValue");
+  modVal->setReadOnly(true);
+  modLabels[statKey] = modVal;
+  auto *sb = new QSpinBox();
+  sb->setRange(1, 40);
+  sb->setValue(score);
+  sb->setAlignment(Qt::AlignCenter);
+  sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
+  statSpins[statKey] = sb;
+  connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          &CharacterSheet::updateAllCalculations);
+  l->addWidget(t);
+  l->addWidget(modVal);
+  l->addStretch();
+  l->addWidget(sb);
+  return f;
+}
+
+QWidget *CharacterSheet::createSavingThrowsBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->setSpacing(4);
+  globalProfSpin = new QSpinBox();
+  globalProfSpin->setRange(0, 20);
+  globalProfSpin->setValue(data["proficiency"].toInt());
+  connect(globalProfSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          &CharacterSheet::updateAllCalculations);
+  auto *h1 = new QHBoxLayout();
+  h1->addWidget(globalProfSpin);
+  h1->addWidget(new QLabel("БОНУС МАСТЕРСТВА"));
+  h1->addStretch();
+  l->addLayout(h1);
+  inspirationCheck = new QCheckBox("ВДОХНОВЕНИЕ");
+  l->addWidget(inspirationCheck);
+  l->addSpacing(5);
+  l->addWidget(new QLabel("СПАСБРОСКИ"));
+  QStringList stats = {"str", "dex", "con", "int", "wis", "cha"};
+  for (const QString &k : stats) {
+    savesState[k] = data["saves"].toObject()[k].toObject()["isProf"].toBool();
+    auto *h = new QHBoxLayout();
+    h->setSpacing(5);
+    auto *btn = new QPushButton();
+    btn->setFixedSize(20, 20);
+    btn->setCheckable(true);
+    btn->setChecked(savesState[k]);
+    btn->setProperty("class", "indicator");
+    saveProfBtns[k] = btn;
+    connect(btn, &QPushButton::clicked,
+            [this, k]() { toggleSaveProficiency(k); });
+    auto *v = new QLineEdit("+0");
+    v->setFixedWidth(35);
+    v->setAlignment(Qt::AlignCenter);
+    v->setReadOnly(true);
+    saveBonusLabels[k] = v;
+    h->addWidget(btn);
+    h->addWidget(v);
+    h->addWidget(new QLabel(k.toUpper()));
+    h->addStretch();
+    l->addLayout(h);
+  }
+  return f;
+}
+
+QWidget *CharacterSheet::createSkillsBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->setSpacing(2);
+  l->addWidget(new QLabel("НАВЫКИ"));
+  QJsonObject sks = data["skills"].toObject();
+  QStringList sorted = sks.keys();
+  sorted.sort();
+  for (const QString &k : sorted) {
+    auto s = sks[k].toObject();
+    int p = s["isProf"].toInt();
+    skillsState[k] = {s["baseStat"].toString(), p};
+    auto *h = new QHBoxLayout();
+    h->setSpacing(4);
+    auto *btn = new QPushButton();
+    btn->setFixedSize(20, 20);
+    btn->setProperty("class", "indicator");
+    if (p == 1)
+      btn->setObjectName("prof1");
+    else if (p == 2)
+      btn->setObjectName("prof2");
+    skillProfBtns[k] = btn;
+    connect(btn, &QPushButton::clicked,
+            [this, k]() { toggleSkillProficiency(k); });
+    auto *val = new QSpinBox();
+    val->setRange(-20, 50);
+    val->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    val->setFixedWidth(28);
+    val->setAlignment(Qt::AlignCenter);
+    skillSpins[k] = val;
+    auto *lbl = new QLabel(s["label"].toString());
+    lbl->setStyleSheet("font-size: 0.9em;");
+    auto *cl = new QLabel("");
+    cl->setProperty("class", "sublabel");
+    skillCalcLabels[k] = cl;
+    h->addWidget(btn);
+    h->addWidget(val);
+    h->addWidget(lbl);
+    h->addStretch();
+    h->addWidget(cl);
+    l->addLayout(h);
+  }
+  passivePerceptionLabel = new QLineEdit("0");
+  passivePerceptionLabel->setFixedWidth(35);
+  passivePerceptionLabel->setAlignment(Qt::AlignCenter);
+  auto *ppL = new QHBoxLayout();
+  ppL->addWidget(new QLabel("ВНИМ. (П):"));
+  ppL->addWidget(passivePerceptionLabel);
+  ppL->addStretch();
+  l->addLayout(ppL);
+  return f;
+}
+
+QWidget *CharacterSheet::createCombatStatsBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QHBoxLayout(f);
+  l->setContentsMargins(5, 5, 5, 5);
+  l->setSpacing(10);
+  auto makeB = [&](const QString &t, QWidget *w, bool shield = false,
+                   bool smallLabel = false) {
+    auto *b = new QFrame();
+    b->setMinimumWidth(110);
+    b->setMinimumHeight(80);
+    if (shield)
+      b->setObjectName("acShield");
+    auto *v = new QVBoxLayout(b);
+    v->setContentsMargins(5, 5, 5, 5);
+    v->setSpacing(2);
+    w->setObjectName("combatStatValue");
+    auto *lbl = new QLabel(t);
+    lbl->setAlignment(Qt::AlignCenter);
+    lbl->setProperty("class", smallLabel ? "small-label" : "sublabel");
+    v->addWidget(w);
+    v->addWidget(lbl);
+    return b;
+  };
+  acSpin = new QSpinBox();
+  acSpin->setRange(0, 50);
+  acSpin->setAlignment(Qt::AlignCenter);
+  acSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+  acSpin->setValue(
+      data["vitality"].toObject()["ac"].toObject()["value"].toInt());
+  initEdit = new QLineEdit("+0");
+  initEdit->setAlignment(Qt::AlignCenter);
+  initEdit->setReadOnly(true);
+  QString sVal =
+      data["vitality"].toObject()["speed"].toObject()["value"].toString();
+  if (sVal.isEmpty())
+    sVal = "30";
+  speedEdit = new QLineEdit(sVal);
+  speedEdit->setAlignment(Qt::AlignCenter);
+  l->addWidget(makeB("КД", acSpin, true));
+  l->addWidget(makeB("ИНИЦИАТИВА", initEdit, false, true));
+  l->addWidget(makeB("СКОРОСТЬ", speedEdit));
+  return f;
+}
+
+QWidget *CharacterSheet::createHPBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->setSpacing(5);
+  QJsonObject v = data["vitality"].toObject();
+  auto *top = new QHBoxLayout();
+  top->addWidget(new QLabel("МАКСИМУМ ХИТОВ"));
+  hpMaxSpin = new QSpinBox();
+  hpMaxSpin->setRange(0, 999);
+  hpMaxSpin->setValue(v["hp-max"].toObject()["value"].toInt());
+  top->addWidget(hpMaxSpin);
+  l->addLayout(top);
+  hpCurrentSpin = new QSpinBox();
+  hpCurrentSpin->setRange(-200, 999);
+  hpCurrentSpin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+  hpCurrentSpin->setValue(v["hp-current"].toInt());
+  hpCurrentSpin->setAlignment(Qt::AlignCenter);
+  hpCurrentSpin->setObjectName("combatStatValue");
+  l->addWidget(hpCurrentSpin);
+  l->addWidget(new QLabel("ТЕКУЩИЕ ХИТЫ"), 0, Qt::AlignCenter);
+  hpTempSpin = new QSpinBox();
+  hpTempSpin->setRange(0, 500);
+  hpTempSpin->setAlignment(Qt::AlignCenter);
+  hpTempSpin->setValue(v["hp-temp"].toInt());
+  l->addWidget(hpTempSpin);
+  l->addWidget(new QLabel("ВРЕМЕННЫЕ ХИТЫ"), 0, Qt::AlignCenter);
+  auto *bot = new QHBoxLayout();
+  auto *hdF = new QFrame();
+  auto *hdV = new QVBoxLayout(hdF);
+  hdValueEdit = new QLineEdit(v["hit-die"].toObject()["value"].toString());
+  hdValueEdit->setAlignment(Qt::AlignCenter);
+  hdV->addWidget(new QLabel("Всего"), 0, Qt::AlignCenter);
+  hdV->addWidget(hdValueEdit);
+  hdV->addWidget(new QLabel("КОСТЬ ХИТОВ"), 0, Qt::AlignCenter);
+  bot->addWidget(hdF);
+  auto *dsF = new QFrame();
+  auto *dsV = new QVBoxLayout(dsF);
+  auto *succL = new QHBoxLayout();
+  succL->addWidget(new QLabel("У:"));
+  for (int i = 0; i < 3; ++i) {
+    auto *btn = new QPushButton();
+    btn->setFixedSize(20, 20);
+    btn->setCheckable(true);
+    btn->setProperty("class", "indicator");
+    deathSavesSuccess.append(btn);
+    succL->addWidget(btn);
+  }
+  dsV->addLayout(succL);
+  auto *failL = new QHBoxLayout();
+  failL->addWidget(new QLabel("П:"));
+  for (int i = 0; i < 3; ++i) {
+    auto *btn = new QPushButton();
+    btn->setFixedSize(20, 20);
+    btn->setCheckable(true);
+    btn->setProperty("class", "indicator-fail");
+    deathSavesFail.append(btn);
+    failL->addWidget(btn);
+  }
+  dsV->addLayout(failL);
+  dsV->addWidget(new QLabel("СМЕРТЬ"), 0, Qt::AlignCenter);
+  bot->addWidget(dsF);
+  l->addLayout(bot);
+  return f;
+}
+
+QWidget *CharacterSheet::createAttacksBlock(const QJsonObject &data) {
+  attacksBlockFrame = new QFrame();
+  attacksBlockFrame->setObjectName("attacksFrame");
+  attacksBlockFrame->setFixedHeight(350);
+  auto *l = new QVBoxLayout(attacksBlockFrame);
+  l->setContentsMargins(10, 5, 10, 5);
+  l->setSpacing(5);
+
+  // Header with Labels and Add Button
+  auto *headerLayout = new QHBoxLayout();
+  auto *addBtnTop = new QPushButton("+");
+  addBtnTop->setObjectName("smallControl");
+  connect(addBtnTop, &QPushButton::clicked, this,
+          &CharacterSheet::addNewWeapon);
+  headerLayout->addWidget(addBtnTop);
+
+  auto *labelsH = new QHBoxLayout();
+  labelsH->setContentsMargins(10, 0, 10, 0);
+  labelsH->setSpacing(10);
+  auto *l1 = new QLabel("НАЗВАНИЕ");
+  l1->setProperty("class", "sublabel");
+  l1->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+  auto *l2 = new QLabel("БОНУС");
+  l2->setProperty("class", "sublabel");
+  l2->setAlignment(Qt::AlignCenter);
+  auto *l3 = new QLabel("УРОН / ВИД");
+  l3->setProperty("class", "sublabel");
+  l3->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+  labelsH->addWidget(l1, 3);
+  labelsH->addWidget(l2, 1);
+  labelsH->addWidget(l3, 2);
+  headerLayout->addLayout(labelsH, 1);
+  l->addLayout(headerLayout);
+
+  auto *scroll = new QScrollArea();
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  auto *cont = new QWidget();
+  weaponListLayout = new QVBoxLayout(cont);
+  weaponListLayout->setContentsMargins(0, 5, 0, 5);
+  weaponListLayout->setSpacing(8);
+
+  weaponsData.clear();
+  QJsonArray wps = data["weaponsList"].toArray();
+  for (auto v : wps) {
+    QJsonObject w = v.toObject();
+    weaponsData.append({w["name"].toObject()["value"].toString(),
+                        w["ability"].toString(), w["isProf"].toBool(),
+                        w["modBonus"].toObject()["value"].toInt(),
+                        w["dmg"].toObject()["value"].toString(), ""});
+  }
+
+  scroll->setWidget(cont);
+  l->addWidget(scroll);
+
+  // Footer with Sizing Controls
+  auto *footer = new QHBoxLayout();
+  auto *title = new QLabel("АТАКИ И ЗАКЛИНАНИЯ");
+  title->setProperty("class", "sublabel");
+  footer->addStretch();
+  footer->addWidget(title);
+  footer->addStretch();
+
+  auto *sizeControls = new QFrame();
+  sizeControls->setStyleSheet("background: palette(window); border-radius: "
+                              "6px; border: 1px solid palette(text);");
+  auto *scL = new QHBoxLayout(sizeControls);
+  scL->setContentsMargins(4, 4, 4, 4);
+  scL->setSpacing(4);
+  auto *plus = new QPushButton("+");
+  plus->setObjectName("smallControl");
+  connect(plus, &QPushButton::clicked, this,
+          &CharacterSheet::expandAttacksBlock);
+  auto *minus = new QPushButton("-");
+  minus->setObjectName("smallControl");
+  connect(minus, &QPushButton::clicked, this,
+          &CharacterSheet::shrinkAttacksBlock);
+  scL->addWidget(plus);
+  scL->addWidget(minus);
+  footer->addWidget(sizeControls);
+  l->addLayout(footer);
+
+  refreshWeaponList();
+  return attacksBlockFrame;
+}
+
+void CharacterSheet::refreshWeaponList() {
+  while (auto *it = weaponListLayout->takeAt(0)) {
+    if (it->widget())
+      delete it->widget();
+    delete it;
+  }
+  int pbVal = globalProfSpin ? globalProfSpin->value() : 2;
+  QMap<QString, int> mods;
+  for (auto k : statSpins.keys())
+    mods[k] = std::floor((statSpins[k]->value() - 10) / 2.0);
+
+  for (int i = 0; i < weaponsData.size(); ++i) {
+    auto &w = weaponsData[i];
+    auto *card = new QPushButton();
+    card->setObjectName("weaponCard");
+    card->setContentsMargins(5, 2, 5, 2);
+    auto *cl = new QHBoxLayout(card);
+    cl->setContentsMargins(0, 0, 0, 0);
+    cl->setSpacing(10);
+
+    int statMod = (w.ability == "none") ? 0 : mods.value(w.ability, 0);
+    int totalHit = statMod + (w.isProf ? pbVal : 0) + w.magicBonus;
+
+    auto *nameB = new QLabel(w.name);
+    nameB->setProperty("class", "weapon-blob");
+    nameB->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    auto *hitB =
+        new QLabel(QString("%1%2").arg(totalHit >= 0 ? "+" : "").arg(totalHit));
+    hitB->setProperty("class", "weapon-blob");
+    hitB->setAlignment(Qt::AlignCenter);
+    auto *dmgB = new QLabel(w.damage);
+    dmgB->setProperty("class", "weapon-blob");
+    dmgB->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    cl->addWidget(nameB, 3);
+    cl->addWidget(hitB, 1);
+    cl->addWidget(dmgB, 2);
+    connect(card, &QPushButton::clicked, this, [this, i]() { editWeapon(i); });
+    weaponListLayout->addWidget(card);
+  }
+  weaponListLayout->addStretch(1);
+}
+
+void CharacterSheet::expandAttacksBlock() {
+  if (attacksBlockFrame)
+    attacksBlockFrame->setFixedHeight(attacksBlockFrame->height() + 50);
+}
+
+void CharacterSheet::shrinkAttacksBlock() {
+  if (attacksBlockFrame && attacksBlockFrame->height() > 200)
+    attacksBlockFrame->setFixedHeight(attacksBlockFrame->height() - 50);
+}
+
+void CharacterSheet::addNewWeapon() {
+  weaponsData.append({"Новое оружие", "str", true, 0, "1к8", ""});
+  refreshWeaponList();
+}
+
+void CharacterSheet::editWeapon(int index) {
+  if (index < 0 || index >= weaponsData.size())
+    return;
+  int pbVal = globalProfSpin ? globalProfSpin->value() : 2;
+  QMap<QString, int> mods;
+  for (auto k : statSpins.keys())
+    mods[k] = std::floor((statSpins[k]->value() - 10) / 2.0);
+
+  WeaponEditorDialog dlg(weaponsData[index], pbVal, mods, this);
+  if (dlg.exec() == QDialog::Accepted) {
+    if (dlg.isDeleted())
+      weaponsData.removeAt(index);
+    else
+      weaponsData[index] = dlg.getWeaponData();
+    refreshWeaponList();
+  }
+}
+
+QWidget *CharacterSheet::createPersonalityBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->setSpacing(5);
+  auto makeS = [&](const QString &t, QTextEdit *&ed, const QString &k) {
+    auto *b = new QFrame();
+    b->setObjectName("textBlock");
+    auto *v = new QVBoxLayout(b);
+    v->setContentsMargins(5, 5, 5, 5);
+    v->setSpacing(2);
+    ed = new QTextEdit();
+    ed->setPlainText(tipTapToPlain(
+        data["text"].toObject()[k].toObject()["value"].toObject()));
+    ed->setMinimumHeight(60);
+    v->addWidget(ed);
+    auto *lbl = new QLabel(t);
+    lbl->setAlignment(Qt::AlignCenter);
+    lbl->setProperty("class", "sublabel");
+    v->addWidget(lbl);
+    return b;
+  };
+  l->addWidget(makeS("ЧЕРТЫ ХАРАКТЕРА", traitsEdit, "personality"));
+  l->addWidget(makeS("ИДЕАЛЫ", idealsEdit, "ideals"));
+  l->addWidget(makeS("ПРИВЯЗАННОСТИ", bondsEdit, "bonds"));
+  l->addWidget(makeS("СЛАБОСТИ", flawsEdit, "flaws"));
+  return f;
+}
+
+QWidget *CharacterSheet::createFeaturesBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  l->addWidget(new QLabel("УМЕНИЯ И ОСОБЕННОСТИ"));
+  featuresEdit = new QTextEdit();
+  featuresEdit->setPlainText(tipTapToPlain(
+      data["text"].toObject()["traits"].toObject()["value"].toObject()));
+  l->addWidget(featuresEdit);
+  return f;
+}
+
+QWidget *CharacterSheet::createEquipmentBlock(const QJsonObject &data) {
+  auto *f = new QFrame();
+  auto *l = new QVBoxLayout(f);
+  l->setContentsMargins(10, 10, 10, 10);
+  inventoryEdit = new QTextEdit();
+  inventoryEdit->setPlainText(tipTapToPlain(
+      data["text"].toObject()["equipment"].toObject()["value"].toObject()));
+  l->addWidget(inventoryEdit);
+  l->addWidget(new QLabel("СНАРЯЖЕНИЕ"), 0, Qt::AlignCenter);
+  return f;
+}
+
+void CharacterSheet::setupMagicTab(const QJsonObject &data) {
+  auto *tab = new QWidget();
+  auto *l = new QVBoxLayout(tab);
+  l->setContentsMargins(15, 15, 15, 15);
+  auto *h = new QHBoxLayout();
+  spellClassEdit =
+      new QLineEdit(data["casterClass"].toObject()["value"].toString());
+  spellAbilityCombo = new QComboBox();
+  spellAbilityCombo->addItem("Интеллект", "int");
+  spellAbilityCombo->addItem("Мудрость", "wis");
+  spellAbilityCombo->addItem("Харизма", "cha");
+  spellSaveDCEdit = new QLineEdit();
+  spellSaveDCEdit->setFixedWidth(40);
+  spellSaveDCEdit->setAlignment(Qt::AlignCenter);
+  spellSaveDCEdit->setReadOnly(true);
+  spellAttackBonusEdit = new QLineEdit();
+  spellAttackBonusEdit->setFixedWidth(40);
+  spellAttackBonusEdit->setAlignment(Qt::AlignCenter);
+  spellAttackBonusEdit->setReadOnly(true);
+  h->addWidget(new QLabel("КЛАСС:"));
+  h->addWidget(spellClassEdit, 2);
+  h->addWidget(new QLabel("ХАР-КА:"));
+  h->addWidget(spellAbilityCombo, 1);
+  h->addWidget(new QLabel("DC:"));
+  h->addWidget(spellSaveDCEdit);
+  h->addWidget(new QLabel("БОНУС:"));
+  h->addWidget(spellAttackBonusEdit);
+  l->addLayout(h);
+  auto *scroll = new QScrollArea();
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  auto *cont = new QWidget();
+  auto *grid = new QGridLayout(cont);
+  grid->setSpacing(10);
+  QJsonObject txts = data["text"].toObject();
+  QJsonObject spellsSlotsData = data["spells"].toObject();
+  for (int i = 0; i <= 9; ++i) {
+    QString key = QString("spells-level-%1").arg(i);
+    QString slotKey = QString("slots-%1").arg(i);
+    auto *box = new QFrame();
+    box->setObjectName("magicBox");
+    auto *bl = new QVBoxLayout(box);
+    auto *header = new QHBoxLayout();
+    header->addWidget(new QLabel(QString("УРОВЕНЬ %1").arg(i)));
+    header->addStretch();
+    if (i > 0) {
+      auto *sb = new QSpinBox();
+      sb->setRange(0, 20);
+      sb->setValue(spellsSlotsData[slotKey].toObject()["value"].toInt());
+      sb->setFixedWidth(40);
+      spellSlotSpins[i] = sb;
+      auto *circles = new QWidget();
+      auto *cL = new QHBoxLayout(circles);
+      cL->setContentsMargins(0, 0, 0, 0);
+      cL->setSpacing(4);
+      spellCirclesLayouts[i] = cL;
+      updateSpellSlots(i, sb->value());
+      connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
+              [this, i](int v) { updateSpellSlots(i, v); });
+      header->addWidget(new QLabel("Яч:"));
+      header->addWidget(sb);
+      header->addWidget(circles);
+    }
+    bl->addLayout(header);
+    auto *ed = new QTextEdit();
+    ed->setPlainText(tipTapToPlain(txts[key].toObject()["value"].toObject()));
+    ed->setMinimumHeight(100);
+    magicEdits[key] = ed;
+    bl->addWidget(ed);
+    grid->addWidget(box, i / 2, i % 2);
+  }
+  scroll->setWidget(cont);
+  l->addWidget(scroll);
+  tabs->addTab(tab, "МАГИЯ");
+  connect(spellAbilityCombo,
+          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          &CharacterSheet::updateSpellCalculations);
+}
+
+void CharacterSheet::updateAllCalculations(int) {
+  int pbVal = globalProfSpin ? globalProfSpin->value() : 2;
+  QMap<QString, int> mods;
+  for (auto k : statSpins.keys()) {
+    if (!statSpins[k])
+      continue;
+    int m = std::floor((statSpins[k]->value() - 10) / 2.0);
+    mods[k] = m;
+    if (modLabels.contains(k) && modLabels[k])
+      modLabels[k]->setText(QString("%1%2").arg(m >= 0 ? "+" : "").arg(m));
+    int s = m + (savesState[k] ? pbVal : 0);
+    if (saveBonusLabels.contains(k) && saveBonusLabels[k])
+      saveBonusLabels[k]->setText(
+          QString("%1%2").arg(s >= 0 ? "+" : "").arg(s));
+  }
+  for (auto k : skillSpins.keys()) {
+    if (!skillSpins[k] || !skillsState.contains(k))
+      continue;
+    int m = mods.value(skillsState[k].baseStat, 0);
+    int t = m + (skillsState[k].profLevel * pbVal);
+    skillSpins[k]->setValue(t);
+    if (skillCalcLabels.contains(k) && skillCalcLabels[k])
+      skillCalcLabels[k]->setText(QString("(%1)").arg(t >= 0 ? "+" : "") +
+                                  QString::number(t));
+  }
+  if (passivePerceptionLabel) {
+    int m = mods.value("wis", 0);
+    int t = 10 + m + (skillsState.value("perception").profLevel * pbVal);
+    passivePerceptionLabel->setText(QString::number(t));
+  }
+  if (initEdit) {
+    int m = mods.value("dex", 0);
+    initEdit->setText(QString("%1%2").arg(m >= 0 ? "+" : "").arg(m));
+  }
+  refreshWeaponList();
+  updateSpellCalculations();
+}
+
+void CharacterSheet::updateSpellCalculations() {
+  if (!spellAbilityCombo || !spellSaveDCEdit || !spellAttackBonusEdit)
+    return;
+  QString ac = spellAbilityCombo->currentData().toString();
+  if (ac.isEmpty() || !statSpins.contains(ac) || !statSpins[ac])
+    return;
+  int m = std::floor((statSpins[ac]->value() - 10) / 2.0);
+  int pbVal = globalProfSpin ? globalProfSpin->value() : 2;
+  spellSaveDCEdit->setText(QString::number(8 + pbVal + m));
+  int b = pbVal + m;
+  spellAttackBonusEdit->setText((b >= 0 ? "+" : "") + QString::number(b));
+}
+
+void CharacterSheet::updateSpellSlots(int l, int c) {
+  if (!spellCirclesLayouts.contains(l))
+    return;
+  auto *lay = spellCirclesLayouts[l];
+  while (auto *it = lay->takeAt(0)) {
+    if (it->widget())
+      delete it->widget();
+    delete it;
+  }
+  for (int i = 0; i < c; ++i) {
+    auto *btn = new QPushButton();
+    btn->setFixedSize(20, 20);
+    btn->setCheckable(true);
+    btn->setProperty("class", "indicator");
+    lay->addWidget(btn);
+  }
+}
+
+QString CharacterSheet::tipTapToPlain(const QJsonObject &o) {
   QJsonArray c;
-
-  // Вариант 1: obj содержит ключ "data", внутри которого "content"
-  if (obj.contains("data") && obj["data"].toObject().contains("content")) {
-    c = obj["data"].toObject()["content"].toArray();
-  }
-  // Вариант 2: obj сам является документом и содержит "content"
-  else if (obj.contains("content")) {
-    c = obj["content"].toArray();
-  }
-  // Вариант 3: если это строка? (нет, входной параметр QJsonObject)
-  // Если ничего не нашли - пустой массив
-
-  for (auto bV : c) {
-    auto b = bV.toObject();
-    if (b["type"].toString() == "paragraph") {
-      bool first = true;
-      for (auto cV : b["content"].toArray()) {
-        t += cV.toObject()["text"].toString();
-        first = false;
-      }
+  if (o.contains("data"))
+    c = o["data"].toObject()["content"].toArray();
+  else
+    c = o["content"].toArray();
+  QString t;
+  for (auto v : c) {
+    auto p = v.toObject();
+    if (p["type"].toString() == "paragraph") {
+      QJsonArray contentArray = p["content"].toArray();
+      if (contentArray.isEmpty())
+        t += "\n";
+      for (auto cv : contentArray)
+        t += cv.toObject()["text"].toString();
       t += "\n";
     }
   }
   return t;
 }
 
-// Расчет модификатора характеристики по правилам D&D 5e
-// Формула: (Значение - 10) / 2, с округлением вниз
-int CharacterSheet::calculateMod(int score) {
-  return std::floor((score - 10) / 2.0);
-}
-
-// Обновление всех вычисляемых полей при изменении характеристик или мастерства
-void CharacterSheet::updateAllCalculations(int) {
-  int pb = globalProfSpin->value(); // Бонус мастерства
-  QMap<QString, int> currentMods;
-
-  // 1. Считаем модификаторы характеристик и Спасброски
-  for (auto it = statSpins.begin(); it != statSpins.end(); ++it) {
-    int score = it.value()->value();
-    int mod = std::floor((score - 10) / 2.0);
-    currentMods[it.key()] = mod;
-
-    // Обновляем текст модификатора (+5)
-    modLabels[it.key()]->setText(
-        QString("%1%2").arg(mod >= 0 ? "+" : "").arg(mod));
-
-    // Обновляем итоговый бонус спасброска
-    int saveTotal = mod + (savesState[it.key()] ? pb : 0);
-    saveBonusLabels[it.key()]->setText(
-        QString("Спас: %1%2").arg(saveTotal >= 0 ? "+" : "").arg(saveTotal));
-  }
-
-  // 2. Считаем навыки (Мод стата + PB * Уровень владения)
-  for (auto it = skillSpins.begin(); it != skillSpins.end(); ++it) {
-    QString key = it.key();
-    int statMod = currentMods[skillsState[key].baseStat];
-    int masteryPart = skillsState[key].profLevel * pb;
-    int total = statMod + masteryPart;
-
-    it.value()->setValue(total);
-
-    if (skillCalcLabels.contains(key)) {
-      skillCalcLabels[key]->setText(
-          QString("<font color='#777'>(%1%2 ст, %3%4 мст)</font>")
-              .arg(statMod >= 0 ? "+" : "")
-              .arg(statMod)
-              .arg(masteryPart >= 0 ? "+" : "")
-              .arg(masteryPart));
-    }
-  }
-
-  // 3. Считаем попадание оружия
-  for (auto &w : weaponsUI) {
-    int hit = currentMods[w.ability] + (w.isProf ? pb : 0) + w.magicBonus;
-    w.hitLabel->setText(QString("+%1").arg(hit));
-  }
-
-  // 4. Считаем магию (DC, Bonus)
-  updateSpellCalculations();
-}
-
-void CharacterSheet::toggleSkillProficiency(const QString &key) {
-  int &lvl = skillsState[key].profLevel;
-  lvl = (lvl + 1) % 3; // Цикл 0 -> 1 -> 2
-  skillProfBtns[key]->setText((lvl == 2) ? "●●" : (lvl == 1 ? "●" : "○"));
-  updateAllCalculations();
-}
-
-void CharacterSheet::toggleSaveProficiency(const QString &key) {
-  savesState[key] = !savesState[key];
-  saveProfBtns[key]->setText(savesState[key] ? "● ВЛАДЕЮ" : "○ СПАС");
-  updateAllCalculations();
-}
-
-QWidget *CharacterSheet::createStatBox(const QString &label, int score,
-                                       bool isProfSave,
-                                       const QString &statKey) {
-  auto *box = new QFrame();
-  box->setStyleSheet("border: 2px solid palette(mid); border-radius: 12px; "
-                     "background: palette(window);");
-  auto *bl = new QVBoxLayout(box);
-  bl->setSpacing(2);
-
-  auto *nameLbl = new QLabel(label.toUpper());
-  nameLbl->setAlignment(Qt::AlignCenter);
-  nameLbl->setStyleSheet("border: none; font-size: 10px; font-weight: bold; "
-                         "color: palette(window-text);");
-
-  auto *sb = new QSpinBox();
-  sb->setRange(1, 30);
-  sb->setValue(score);
-  sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
-  sb->setAlignment(Qt::AlignCenter);
-  sb->setStyleSheet("border: none; font-size: 26px; font-weight: bold; "
-                    "background: transparent; color: palette(text);");
-  statSpins[statKey] = sb;
-  connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
-          &CharacterSheet::updateAllCalculations);
-
-  auto *ml = new QLabel("+0");
-  ml->setAlignment(Qt::AlignCenter);
-  ml->setStyleSheet("border: none; font-size: 14px; font-weight: bold; color: "
-                    "palette(text);");
-  modLabels[statKey] = ml;
-
-  auto *saveVal = new QLabel("Спас: +0");
-  saveVal->setAlignment(Qt::AlignCenter);
-  saveVal->setStyleSheet(
-      "border: none; font-size: 12px; color: #d00; font-weight: bold;");
-  saveBonusLabels[statKey] = saveVal;
-
-  auto *saveBtn = new QPushButton(isProfSave ? "● ВЛАДЕЮ" : "○ СПАС");
-  saveBtn->setStyleSheet(
-      "border: 1px solid palette(mid); border-radius: 4px; font-size: 10px; "
-      "font-weight: bold; background: palette(button); color: "
-      "palette(button-text); padding: 3px;");
-  saveProfBtns[statKey] = saveBtn;
-  savesState[statKey] = isProfSave;
-  connect(saveBtn, &QPushButton::clicked,
-          [this, statKey]() { toggleSaveProficiency(statKey); });
-
-  bl->addWidget(nameLbl);
-  bl->addWidget(sb);
-  bl->addWidget(ml);
-  bl->addWidget(saveVal);
-  bl->addWidget(saveBtn);
-  return box;
-}
-
-void CharacterSheet::setupGeneralTab(const QJsonObject &data) {
-  auto *tab = new QWidget();
-  auto *l = new QVBoxLayout(tab);
-  auto *statsLayout = new QHBoxLayout();
-
-  // Загрузка характеристик и спасбросков из JSON
-  QJsonObject stats = data["stats"].toObject();
-  QJsonObject saves = data["saves"].toObject();
-
-  // Список ключей характеристик в нужном порядке
-  QStringList keys = {"str", "dex", "con", "int", "wis", "cha"};
-
-  for (const QString &k : keys) {
-    statsLayout->addWidget(
-        createStatBox(stats[k].toObject()["label"].toString(),
-                      stats[k].toObject()["score"].toInt(),
-                      saves[k].toObject()["isProf"].toBool(), k));
-  }
-  l->addLayout(statsLayout);
-
-  l->addWidget(new QLabel("<b>ОСОБЕННОСТИ И УМЕНИЯ:</b>"));
-  traitsEdit = new QTextEdit();
-  traitsEdit->setPlainText(tipTapToPlain(
-      data["text"].toObject()["traits"].toObject()["value"].toObject()));
-  traitsEdit->setStyleSheet(
-      "border: 2px solid black; padding: 10px; font-size: 14px;");
-  l->addWidget(traitsEdit);
-
-  tabs->addTab(tab, "Основа");
-}
-
-void CharacterSheet::setupSkillsTab(const QJsonObject &data) {
-  auto *tab = new QWidget();
-  auto *l = new QVBoxLayout(tab);
-  auto *scroll = new QScrollArea();
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-
-  auto *content = new QWidget();
-  auto *grid = new QGridLayout(content);
-  grid->setColumnStretch(2, 1);
-
-  // Получение списка навыков и их сортировка по алфавиту
-  QJsonObject skills = data["skills"].toObject();
-  QStringList sorted = skills.keys();
-  sorted.sort();
-  int row = 0;
-
-  for (const QString &k : sorted) {
-    auto s = skills[k].toObject();
-    int profLevel = s["isProf"].toInt();
-    skillsState[k] = {s["baseStat"].toString(), profLevel};
-
-    auto *btn =
-        new QPushButton(profLevel == 2 ? "●●" : (profLevel == 1 ? "●" : "○"));
-    btn->setFixedSize(40, 30);
-    btn->setStyleSheet(
-        "border: 1px solid palette(mid); font-weight: bold; "
-        "background: palette(button); color: palette(button-text);");
-    skillProfBtns[k] = btn;
-    connect(btn, &QPushButton::clicked,
-            [this, k]() { toggleSkillProficiency(k); });
-
-    auto *calc = new QLabel();
-    skillCalcLabels[k] = calc;
-
-    auto *sb = new QSpinBox();
-    sb->setRange(-20, 50);
-    sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
-    sb->setFixedWidth(50);
-    sb->setStyleSheet(
-        "border: 1px solid palette(mid); border-radius: 4px; font-weight: "
-        "bold; color: palette(text); background: palette(base);");
-    skillSpins[k] = sb;
-
-    grid->addWidget(btn, row, 0);
-    grid->addWidget(new QLabel(s["label"].toString()), row, 1);
-    grid->addWidget(calc, row, 2);
-    grid->addWidget(sb, row, 3);
-    row++;
-  }
-  scroll->setWidget(content);
-  l->addWidget(scroll);
-  tabs->addTab(tab, "Навыки");
-}
-
-void CharacterSheet::setupCombatTab(const QJsonObject &data) {
-  auto *tab = new QWidget();
-  auto *l = new QVBoxLayout(tab);
-  auto *scroll = new QScrollArea();
-  scroll->setWidgetResizable(true);
-  auto *container = new QWidget();
-  auto *v = new QVBoxLayout(container);
-
-  v->addWidget(new QLabel("<br><h3>Оружие и атаки</h3>"));
-  QJsonArray weapons = data["weaponsList"].toArray();
-  for (auto wV : weapons) {
-    auto w = wV.toObject();
-    auto *f = new QFrame();
-    f->setStyleSheet("border: 2px solid palette(mid); border-radius: 20px; "
-                     "background: palette(window); margin: 3px;");
-    auto *fl = new QHBoxLayout(f);
-
-    auto *nameInp = new QLineEdit(w["name"].toObject()["value"].toString());
-    nameInp->setStyleSheet(
-        "border: 1px solid palette(mid); border-radius: 12px; "
-        "padding: 3px 12px; font-weight: bold; color: palette(text); "
-        "background: palette(base);");
-
-    auto *hitLbl = new QLabel("+0");
-    hitLbl->setStyleSheet(
-        "border: 1px solid palette(mid); border-radius: 10px; "
-        "padding: 2px 10px; color: #ff5555; font-weight: bold;");
-
-    auto *dmgInp = new QLineEdit(w["dmg"].toObject()["value"].toString());
-    dmgInp->setFixedWidth(100);
-    dmgInp->setStyleSheet(
-        "border: 1px solid palette(mid); border-radius: 10px; "
-        "padding: 2px; color: #ffa500; font-weight: bold; background: "
-        "palette(base);");
-
-    weaponsUI.append({nameInp, hitLbl, dmgInp, w["ability"].toString(),
-                      w["isProf"].toBool(),
-                      w["modBonus"].toObject()["value"].toInt()});
-
-    fl->addWidget(nameInp);
-    fl->addStretch();
-    fl->addWidget(new QLabel("🎯"));
-    fl->addWidget(hitLbl);
-    fl->addWidget(new QLabel("💥"));
-    fl->addWidget(dmgInp);
-    v->addWidget(f);
-  }
-  scroll->setWidget(container);
-  l->addWidget(scroll);
-  tabs->addTab(tab, "Бой");
-}
-
-// Вспомогательная функция для создания поля шапки с комбобоксом
-QWidget *createMagicHeaderCombo(const QString &title, QComboBox *&combo,
-                                const QString &currentCode) {
-  auto *f = new QFrame();
-  f->setStyleSheet("border: 2px solid palette(text); border-radius: 0px; "
-                   "background: palette(window);");
-  auto *l = new QVBoxLayout(f);
-  l->setSpacing(0);
-  l->setContentsMargins(5, 2, 5, 2);
-
-  combo = new QComboBox();
-  combo->addItem("Интеллект", "int");
-  combo->addItem("Мудрость", "wis");
-  combo->addItem("Харизма", "cha");
-
-  // Установка текущего значения
-  int idx = combo->findData(currentCode);
-  if (idx >= 0)
-    combo->setCurrentIndex(idx);
-
-  combo->setStyleSheet("border: none; background: transparent; font-size: "
-                       "14px; font-weight: bold; color: palette(text);");
-
-  auto *lbl = new QLabel(title);
-  lbl->setAlignment(Qt::AlignCenter);
-  lbl->setStyleSheet(
-      "border: none; font-size: 9px; font-weight: bold; color: "
-      "palette(window-text); border-top: 1px solid palette(text);");
-
-  l->addWidget(combo);
-  l->addWidget(lbl);
-  return f;
-}
-
-// Вспомогательная функция для создания поля шапки (обычное текстовое поле)
-QWidget *createMagicHeaderBox(const QString &title, QLineEdit *&edit,
-                              const QString &val) {
-  auto *f = new QFrame();
-  f->setStyleSheet("border: 2px solid palette(text); border-radius: 0px; "
-                   "background: palette(window);");
-  auto *l = new QVBoxLayout(f);
-  l->setSpacing(0);
-  l->setContentsMargins(5, 2, 5, 2);
-
-  edit = new QLineEdit(val);
-  edit->setAlignment(Qt::AlignCenter);
-  edit->setStyleSheet("border: none; background: transparent; font-size: 16px; "
-                      "font-weight: bold; color: palette(text);");
-
-  auto *lbl = new QLabel(title);
-  lbl->setAlignment(Qt::AlignCenter);
-  lbl->setStyleSheet(
-      "border: none; font-size: 9px; font-weight: bold; color: "
-      "palette(window-text); border-top: 1px solid palette(text);");
-
-  l->addWidget(edit);
-  l->addWidget(lbl);
-  return f;
-}
-
-void CharacterSheet::setupMagicTab(const QJsonObject &data) {
-  auto *tab = new QWidget();
-  auto *mainL = new QVBoxLayout(tab);
-
-  // --- ШАПКА ---
-  auto *header = new QHBoxLayout();
-
-  // Данные для шапки
-  // 1. Попытка взять из root (originalRoot доступен как член класса)
-  // но лучше брать из распаршенного data, так как там лежат поля
-  QString cls = data["casterClass"].toObject()["value"].toString();
-
-  // 2. Фолбек на подкласс (для трикстеров и т.д.)
-  if (cls.isEmpty()) {
-    cls =
-        data["info"].toObject()["charSubclass"].toObject()["value"].toString();
-  }
-
-  // 3. Фолбек на класс
-  if (cls.isEmpty()) {
-    cls = data["info"].toObject()["charClass"].toObject()["value"].toString();
-  }
-
-  if (cls.isEmpty())
-    cls = "Класс заклинателя";
-
-  QJsonObject sInfo = data["spellsInfo"].toObject();
-  QString abilityCode = sInfo["base"].toObject()["code"].toString();
-  if (abilityCode.isEmpty())
-    abilityCode = "int"; // По умолчанию Интеллект
-
-  // DC и Bonus считаем заново или берем сохраненные
-  // Но так как у нас теперь авторасчет, мы можем их инициализировать нулями,
-  // а потом вызвать updateSpellCalculations() в конце
-  QString saveDC = sInfo["save"].toObject()["value"].toString();
-  QString bonus = sInfo["mod"].toObject()["value"].toString();
-
-  header->addWidget(
-      createMagicHeaderBox("КЛАСС ЗАКЛИНАТЕЛЯ", spellClassEdit, cls), 2);
-  header->addSpacing(20);
-  header->addWidget(
-      createMagicHeaderCombo("БАЗОВАЯ ХАР-КА", spellAbilityCombo, abilityCode),
-      1);
-  header->addSpacing(10);
-  header->addWidget(
-      createMagicHeaderBox("СЛ СПАСБРОСКА", spellSaveDCEdit, saveDC), 1);
-  spellSaveDCEdit->setReadOnly(true); // Теперь только чтение (авторасчет)
-  header->addSpacing(10);
-  header->addWidget(
-      createMagicHeaderBox("БОНУС АТАКИ", spellAttackBonusEdit, bonus), 1);
-  spellAttackBonusEdit->setReadOnly(true); // Только чтение
-
-  // Подключение сигналов авторасчета
-  connect(spellAbilityCombo,
-          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          &CharacterSheet::updateSpellCalculations);
-
-  mainL->addLayout(header);
-  mainL->addSpacing(15);
-
-  // --- ПОЛОТНО ЗАКЛИНАНИЙ (3 КОЛОНКИ) ---
-  auto *scroll = new QScrollArea();
-  scroll->setWidgetResizable(true);
-  scroll->setFrameShape(QFrame::NoFrame);
-
-  auto *container = new QWidget();
-  auto *colsL = new QHBoxLayout(container);
-  colsL->setSpacing(15);
-  colsL->setAlignment(Qt::AlignTop);
-
-  auto *col1 = new QVBoxLayout();
-  col1->setAlignment(Qt::AlignTop);
-  auto *col2 = new QVBoxLayout();
-  col2->setAlignment(Qt::AlignTop);
-  auto *col3 = new QVBoxLayout();
-  col3->setAlignment(Qt::AlignTop);
-
-  QJsonObject textData = data["text"].toObject();
-  QJsonObject spellsSlotsData = data["spells"].toObject();
-
-  for (int i = 0; i <= 9; ++i) {
-    QString key = QString("spells-level-%1").arg(i);
-    QString slotKey = QString("slots-%1").arg(i);
-
-    auto *group = new QFrame();
-    auto *gl = new QVBoxLayout(group);
-    gl->setContentsMargins(0, 0, 0, 10);
-    gl->setSpacing(5);
-
-    // Заголовок уровня
-    auto *headFrame = new QFrame();
-    // Убрали "ублюдочные кружки" (radius 15 -> 4), сделали более строгий стиль
-    headFrame->setStyleSheet("border: 1px solid palette(text); border-radius: "
-                             "4px; background: palette(window);");
-    headFrame->setFixedHeight(36);
-    auto *hl = new QHBoxLayout(headFrame);
-    hl->setContentsMargins(5, 0, 10, 0);
-    hl->setAlignment(Qt::AlignVCenter); // Центрирование всего содержимого
-
-    auto *lvlCircle = new QLabel(QString::number(i));
-    lvlCircle->setFixedSize(24, 24);
-    lvlCircle->setAlignment(Qt::AlignCenter);
-    lvlCircle->setStyleSheet("border: 1px solid palette(text); border-radius: "
-                             "12px; font-weight: bold; font-size: 14px;");
-
-    QString title = (i == 0) ? "ЗАГОВОРЫ" : "";
-    auto *titleLbl = new QLabel(title);
-    titleLbl->setStyleSheet(
-        "border: none; font-weight: bold; font-size: 12px;");
-
-    hl->addWidget(lvlCircle);
-    hl->addWidget(titleLbl);
-    hl->addStretch();
-
-    // Ячейки заклинаний (только для 1-9 уровней)
-    if (i > 0) {
-      auto *lblTotal = new QLabel("ВСЕГО ЯЧЕЕК");
-      lblTotal->setStyleSheet("border: none; font-size: 10px; font-weight: "
-                              "bold; margin-right: 5px;");
-      hl->addWidget(lblTotal);
-
-      auto *sb = new QSpinBox();
-      sb->setRange(0, 99);
-      sb->setButtonSymbols(QAbstractSpinBox::NoButtons);
-      sb->setFixedSize(30, 24); // Уменьшили и отцентровали
-      sb->setAlignment(Qt::AlignCenter);
-      sb->setStyleSheet("border: 1px solid palette(text); border-radius: 4px; "
-                        "font-weight: bold; font-size: 14px; background: "
-                        "palette(base); color: palette(text);");
-
-      // Загрузка значения ячеек
-      int maxVal = 0;
-      if (spellsSlotsData.contains(slotKey)) {
-        maxVal = spellsSlotsData[slotKey].toObject()["value"].toInt();
-      }
-      sb->setValue(maxVal);
-      spellSlotSpins[i] = sb;
-
-      hl->addWidget(sb);
-
-      auto *lblExpended = new QLabel("ПОТРАЧЕНО");
-      lblExpended->setStyleSheet("border: none; font-size: 10px; font-weight: "
-                                 "bold; margin-left: 10px; margin-right: 5px;");
-      hl->addWidget(lblExpended);
-
-      // Контейнер для кружочков
-      auto *circlesWidget = new QWidget();
-      auto *circlesLayout = new QHBoxLayout(circlesWidget);
-      circlesLayout->setContentsMargins(0, 0, 0, 0);
-      circlesLayout->setSpacing(2);
-      spellCirclesLayouts[i] = circlesLayout;
-
-      // Первоначальное заполнение
-      updateSpellSlots(i, maxVal);
-
-      // Подключение обновления
-      connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
-              [this, i](int val) { updateSpellSlots(i, val); });
-      hl->addWidget(circlesWidget);
-    }
-
-    // Текст заклинаний
-    QString spellsText = "";
-    if (textData.contains(key)) {
-      spellsText = tipTapToPlain(textData[key].toObject()["value"].toObject());
-    }
-    auto *txt = new QTextEdit();
-    txt->setPlainText(spellsText);
-
-    // Вычисляем высоту на основе строк, но не меньше 60
-    int lines = spellsText.count('\n') + 1;
-    int h = qMax(60, lines * 20 + 20);
-    if (h > 400)
-      h = 400;
-    txt->setFixedHeight(h);
-
-    group->setObjectName("spellGroup");
-    headFrame->setObjectName("spellHead");
-    txt->setObjectName("spellEdit");
-
-    // Стилизация с использованием селекторов для предотвращения наследования
-    group->setStyleSheet(
-        "#spellGroup { border: 1px solid palette(mid); border-radius: 4px; "
-        "background: palette(window); margin-bottom: 10px; }");
-    headFrame->setStyleSheet("#spellHead { border: none; border-bottom: 2px "
-                             "solid palette(text); background: transparent; }");
-    txt->setStyleSheet("#spellEdit { border: none; font-size: 12px; color: "
-                       "palette(text); background: palette(base); }");
-
-    gl->addWidget(headFrame);
-    gl->addWidget(txt);
-
-    // Распределение по колонкам
-    if (i <= 2)
-      col1->addWidget(group);
-    else if (i <= 5)
-      col2->addWidget(group);
-    else
-      col3->addWidget(group);
-  }
-
-  col1->addStretch();
-  col2->addStretch();
-  col3->addStretch();
-
-  colsL->addLayout(col1, 1);
-  colsL->addLayout(col2, 1);
-  colsL->addLayout(col3, 1);
-
-  scroll->setWidget(container);
-  mainL->addWidget(scroll);
-
-  tabs->addTab(tab, "Магия");
-}
-
-void CharacterSheet::setupNotesTab(const QJsonObject &data) {
-  auto *tab = new QWidget();
-  auto *l = new QVBoxLayout(tab);
-
-  l->addWidget(new QLabel("<b>ИНВЕНТАРЬ И СНАРЯЖЕНИЕ:</b>"));
-  inventoryEdit = new QTextEdit();
-  inventoryEdit->setPlainText(
-      tipTapToPlain(data["equipment"].toObject()["value"].toObject()));
-  inventoryEdit->setStyleSheet("border: 2px solid black; padding: 10px;");
-  l->addWidget(inventoryEdit);
-
-  l->addWidget(new QLabel("<br><b>ЗАМЕТКИ ГЕРОЯ:</b>"));
-  notesEdit = new QTextEdit();
-  notesEdit->setPlainText(
-      tipTapToPlain(data["notes-1"].toObject()["value"].toObject()));
-  notesEdit->setStyleSheet("border: 2px solid black; padding: 10px;");
-  l->addWidget(notesEdit);
-
-  tabs->addTab(tab, "Инфо");
-}
-
-// Конвертация простого текста в структуру TipTap (JSON)
-// Создает простую структуру paragraphs с text, чтобы LSS мог прочитать данные
 QJsonObject CharacterSheet::plainToTipTap(const QString &text) {
-  QJsonArray content;
-  for (const QString &line : text.split("\n")) {
-    if (line.isEmpty())
-      continue;
-    QJsonObject txt;
-    txt["type"] = "text";
-    txt["text"] = line;
+  QJsonArray c;
+  for (const QString &l : text.split("\n")) {
+    QJsonObject t;
+    t["type"] = "text";
+    t["text"] = l;
     QJsonObject p;
     p["type"] = "paragraph";
-    p["content"] = QJsonArray{txt};
-    content.append(p);
+    if (!l.isEmpty())
+      p["content"] = QJsonArray{t};
+    else
+      p["content"] = QJsonArray();
+    c.append(p);
   }
-  QJsonObject doc;
-  doc["type"] = "doc";
-  doc["content"] = content;
+  QJsonObject d;
+  d["type"] = "doc";
+  d["content"] = c;
   QJsonObject r;
-  r["data"] = doc;
+  r["data"] = d;
   return r;
 }
 
-// СОХРАНЕНИЕ
 void CharacterSheet::saveToFile() {
-  QString path = QFileDialog::getSaveFileName(this, "Экспорт в LSS JSON", "",
-                                              "JSON (*.json)");
+  QString path = QFileDialog::getSaveFileName(this, "Save", "", "*.json");
   if (path.isEmpty())
     return;
-
-  QJsonObject data = originalData;
-
-  // Имя и мастерство
-  QJsonObject n = data["name"].toObject();
-  n["value"] = nameEditField->text();
-  data["name"] = n;
-  data["proficiency"] = globalProfSpin->value();
-
-  // Характеристики
-  QJsonObject s = data["stats"].toObject();
+  QJsonObject d = originalData;
+  d["name"] = QJsonObject{{"value", nameEditField->text()}};
+  d["proficiency"] = globalProfSpin->value();
+  d["casterClass"] = QJsonObject{{"value", spellClassEdit->text()}};
+  QJsonObject i = d["info"].toObject();
+  i["charClass"] = QJsonObject{{"value", classEdit->text()}};
+  i["charSubclass"] = QJsonObject{{"value", subclassEdit->text()}};
+  i["background"] = QJsonObject{{"value", backgroundEdit->text()}};
+  i["race"] = QJsonObject{{"value", raceEdit->text()}};
+  i["alignment"] = QJsonObject{{"value", alignmentEdit->text()}};
+  i["experience"] = QJsonObject{{"value", expEdit->text()}};
+  i["playerName"] = QJsonObject{{"value", playerNameEdit->text()}};
+  i["level"] = QJsonObject{{"value", levelSpin->value()}};
+  d["info"] = i;
+  QJsonObject st = d["stats"].toObject();
   for (auto k : statSpins.keys()) {
-    QJsonObject st = s[k].toObject();
-    st["score"] = statSpins[k]->value();
-    s[k] = st;
+    QJsonObject s = st[k].toObject();
+    s["score"] = statSpins[k]->value();
+    st[k] = s;
   }
-  data["stats"] = s;
-
-  // Текстовые поля (Особенности, Инвентарь, Заметки)
-  QJsonObject t = data["text"].toObject();
-  QJsonObject tr = t["traits"].toObject();
-  tr["value"] = plainToTipTap(traitsEdit->toPlainText());
-  t["traits"] = tr;
-  QJsonObject eq = t["equipment"].toObject();
-  eq["value"] = plainToTipTap(inventoryEdit->toPlainText());
-  t["equipment"] = eq;
-  QJsonObject nt = t["notes-1"].toObject();
-  nt["value"] = plainToTipTap(notesEdit->toPlainText());
-  t["notes-1"] = nt;
-
-  // Сохранение заклинаний
-  for (auto it = magicEdits.begin(); it != magicEdits.end(); ++it) {
-    QString key = it.key();
-    if (!t.contains(key))
-      t[key] = QJsonObject();
-    QJsonObject spellObj = t[key].toObject();
-    spellObj["value"] = plainToTipTap(it.value()->toPlainText());
-    t[key] = spellObj;
+  d["stats"] = st;
+  QJsonObject svs = d["saves"].toObject();
+  for (auto k : saveProfBtns.keys()) {
+    QJsonObject s = svs[k].toObject();
+    s["isProf"] = saveProfBtns[k]->isChecked();
+    svs[k] = s;
   }
-  data["text"] = t;
-
-  // Сохранение шапки магии
-  QJsonObject info = data["info"].toObject();
-  if (!info.contains("charClass"))
-    info["charClass"] = QJsonObject();
-  QJsonObject cc = info["charClass"].toObject();
-  cc["value"] = spellClassEdit->text();
-  info["charClass"] = cc;
-  data["info"] = info;
-
-  QJsonObject sInfo = data["spellsInfo"].toObject();
-
-  if (!sInfo.contains("base"))
-    sInfo["base"] = QJsonObject();
-  QJsonObject base = sInfo["base"].toObject();
-  // Сохраняем код характеристики (int/wis/cha)
-  base["code"] = spellAbilityCombo->currentData().toString();
-  base["label"] = spellAbilityCombo->currentText();
-  sInfo["base"] = base;
-
-  // DC и Bonus считаются автоматически, но сохраняем их как значения
-  if (!sInfo.contains("save"))
-    sInfo["save"] = QJsonObject();
-  QJsonObject save = sInfo["save"].toObject();
-  save["value"] = spellSaveDCEdit->text();
-  sInfo["save"] = save;
-
-  if (!sInfo.contains("mod"))
-    sInfo["mod"] = QJsonObject();
-  QJsonObject mod = sInfo["mod"].toObject();
-  mod["value"] = spellAttackBonusEdit->text();
-  sInfo["mod"] = mod;
-
-  data["spellsInfo"] = sInfo;
-
-  // Сохранение ячеек заклинаний
-  QJsonObject spellsObj = data["spells"].toObject();
-  for (auto it = spellSlotSpins.begin(); it != spellSlotSpins.end(); ++it) {
-    QString key = QString("slots-%1").arg(it.key());
-    if (!spellsObj.contains(key))
-      spellsObj[key] = QJsonObject();
-    QJsonObject slotObj = spellsObj[key].toObject();
-    // LSS формат: value - это макс. кол-во ячеек
-    // Если мы хотим сохранять текущее состояние потраченных, то нужно поле
-    // filled. Но пока сохраняем только максимум, чтобы соответствовать LSS
-    // структуре, либо если пользователь меняет, то это Max. В UI у нас
-    // отображается Max (так как suffix / N). Давайте сохранять значение как
-    // Макс.
-    slotObj["value"] = it.value()->value();
-    spellsObj[key] = slotObj;
+  d["saves"] = svs;
+  QJsonObject sks = d["skills"].toObject();
+  for (auto k : skillsState.keys()) {
+    QJsonObject s = sks[k].toObject();
+    s["isProf"] = skillsState[k].profLevel;
+    sks[k] = s;
   }
-  data["spells"] = spellsObj;
+  d["skills"] = sks;
+  QJsonObject v = d["vitality"].toObject();
+  v["ac"] = QJsonObject{{"value", acSpin->value()}};
+  v["hp-max"] = QJsonObject{{"value", hpMaxSpin->value()}};
+  v["hp-current"] = hpCurrentSpin->value();
+  v["hp-temp"] = hpTempSpin->value();
+  v["speed"] = QJsonObject{{"value", speedEdit->text()}};
+  v["hit-die"] = QJsonObject{{"value", hdValueEdit->text()}};
+  d["vitality"] = v;
+  QJsonObject t = d["text"].toObject();
+  t["personality"] = plainToTipTap(traitsEdit->toPlainText());
+  t["ideals"] = plainToTipTap(idealsEdit->toPlainText());
+  t["bonds"] = plainToTipTap(bondsEdit->toPlainText());
+  t["flaws"] = plainToTipTap(flawsEdit->toPlainText());
+  t["traits"] = plainToTipTap(featuresEdit->toPlainText());
+  t["equipment"] = plainToTipTap(inventoryEdit->toPlainText());
+  for (auto k : magicEdits.keys())
+    t[k] = plainToTipTap(magicEdits[k]->toPlainText());
+  d["text"] = t;
 
-  // Упаковка данных обратно в строковое поле "data" JSON структуры LSS
-  QJsonDocument innerDoc(data);
-  QJsonObject finalRoot = originalRoot;
-  finalRoot["data"] =
-      QString::fromUtf8(innerDoc.toJson(QJsonDocument::Compact));
+  QJsonArray curWeps;
+  for (const auto &wd : weaponsData) {
+    QJsonObject wo;
+    wo["name"] = QJsonObject{{"value", wd.name}};
+    wo["dmg"] = QJsonObject{{"value", wd.damage}};
+    wo["ability"] = wd.ability;
+    wo["isProf"] = wd.isProf;
+    wo["modBonus"] = QJsonObject{{"value", wd.magicBonus}};
+    curWeps.append(wo);
+  }
+  d["weaponsList"] = curWeps;
 
+  QJsonObject sps = d["spells"].toObject();
+  for (auto k : spellSlotSpins.keys()) {
+    QJsonObject s = sps[QString("slots-%1").arg(k)].toObject();
+    s["value"] = spellSlotSpins[k]->value();
+    sps[QString("slots-%1").arg(k)] = s;
+  }
+  d["spells"] = sps;
+
+  QJsonObject r = originalRoot;
+  r["data"] =
+      QString::fromUtf8(QJsonDocument(d).toJson(QJsonDocument::Compact));
   QFile f(path);
   if (f.open(QIODevice::WriteOnly)) {
-    f.write(QJsonDocument(finalRoot).toJson());
+    f.write(QJsonDocument(r).toJson());
     f.close();
   }
 }
 
-void CharacterSheet::updateSpellCalculations() {
-  // Получаем базовую характеристику (int/wis/cha)
-  QString abilityCode = spellAbilityCombo->currentData().toString();
-  int score = 10;
-  if (statSpins.contains(abilityCode)) {
-    score = statSpins[abilityCode]->value();
-  }
-
-  // Вычисляем модификатор: (Score - 10) / 2
-  int mod = std::floor((score - 10) / 2.0);
-
-  // Бонус мастерства
-  int prof = globalProfSpin->value();
-
-  // DC = 8 + Prof + Mod
-  int dc = 8 + prof + mod;
-  spellSaveDCEdit->setText(QString::number(dc));
-
-  // Attack Bonus = Prof + Mod
-  int bonus = prof + mod;
-  QString bonusStr = (bonus >= 0 ? "+" : "") + QString::number(bonus);
-  spellAttackBonusEdit->setText(bonusStr);
+void CharacterSheet::toggleSkillProficiency(const QString &k) {
+  int &lvl = skillsState[k].profLevel;
+  lvl = (lvl + 1) % 3;
+  if (lvl == 1)
+    skillProfBtns[k]->setObjectName("prof1");
+  else if (lvl == 2)
+    skillProfBtns[k]->setObjectName("prof2");
+  else
+    skillProfBtns[k]->setObjectName("");
+  skillProfBtns[k]->style()->unpolish(skillProfBtns[k]);
+  skillProfBtns[k]->style()->polish(skillProfBtns[k]);
+  updateAllCalculations();
 }
 
-void CharacterSheet::updateSpellSlots(int level, int count) {
-  if (!spellCirclesLayouts.contains(level))
-    return;
-  auto *l = spellCirclesLayouts[level];
-
-  // Очистка старых (удаляем виджеты)
-  QLayoutItem *child;
-  while ((child = l->takeAt(0)) != 0) {
-    if (child->widget())
-      delete child->widget();
-    delete child;
-  }
-
-  // Добавление новых (чекбоксы)
-  for (int j = 0; j < count; ++j) {
-    auto *cb = new QCheckBox();
-    cb->setFixedSize(16, 16);
-    // Стилизация под кружок (можно доработать, но стандартный чекбокс понятен)
-    // В CSS Qt чекбокс indicator можно стилизовать
-    cb->setStyleSheet(
-        "QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid "
-        "palette(text); border-radius: 7px; background: transparent; }"
-        "QCheckBox::indicator:checked { background: palette(text); }");
-    l->addWidget(cb);
-  }
+void CharacterSheet::toggleSaveProficiency(const QString &k) {
+  savesState[k] = !savesState[k];
+  saveProfBtns[k]->setChecked(savesState[k]);
+  updateAllCalculations();
 }
 
 CharacterSheet::~CharacterSheet() {}

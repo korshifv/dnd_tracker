@@ -26,6 +26,7 @@ cmake-build-*/
 *.swp
 *.swo
 *.user
+#bin, personal files 
 dnd_tracker
 .txt
 *.json
