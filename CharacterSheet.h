@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QMap>
+#include <QTimer>
 
 class QTabWidget;
 class QSpinBox;
@@ -57,14 +58,32 @@ private:
   bool deleted = false;
 };
 
-class CharacterSheet : public QDialog {
+class CharacterDocument;
+
+class CharacterSheet : public QWidget {
   Q_OBJECT
 public:
-  explicit CharacterSheet(const QJsonObject &root, const QJsonObject &data,
-                          QWidget *parent = nullptr);
+  // filePath — путь к файлу персонажа (для сохранения в то же место и
+  // для сигнала saved). Раньше это был QDialog, открывавшийся отдельным окном;
+  // теперь QWidget, встраиваемый во вкладку главного окна.
+  explicit CharacterSheet(CharacterDocument *doc, QWidget *parent = nullptr);
   virtual ~CharacterSheet();
 
+  QString getFilePath() const;
+
+  // Принудительное немедленное сохранение (без ожидания таймера).
+  // Вызывается MainWindow при закрытии вкладки / выходе из приложения.
+  void flushSave();
+
+signals:
+  // Эмитится после успешного сохранения, чтобы MainWindow перезагрузил
+  // карточки с этим filePath (фикс #2 — рассинхрон карточки и листа).
+  void saved(const QString &filePath);
+
 private slots:
+  // Отметить наличие несохранённых правок: перезапускает таймер автосейва
+  // (3с бездействия) и показывает индикатор "Изменения…".
+  void markDirty();
   void updateAllCalculations(int = 0);
   void toggleSkillProficiency(const QString &key);
   void toggleSaveProficiency(const QString &key);
@@ -75,6 +94,7 @@ private slots:
   void editWeapon(int index);
   void expandAttacksBlock();
   void shrinkAttacksBlock();
+  void onDocumentHpChanged(int newHp);
 
 private:
   void setupMainLayout(QWidget *dashboard, const QJsonObject &data);
@@ -93,6 +113,12 @@ private:
 
   void refreshWeaponList();
 
+  // Применяет минимальные scoped-стили на основе системной палитры:
+  // индикаторы (спасброски/навыки/ячейки), кнопка сохранения, карточные панели.
+  // Никаких HEX-цветов — только роли palette(...), чтобы интерфейс
+  // автоматически подстраивался под светлую/тёмную тему ОС.
+  void applyThemeStyle();
+
   QString tipTapToPlain(const QJsonObject &obj);
   QJsonObject plainToTipTap(const QString &text);
 
@@ -101,8 +127,7 @@ private:
   QCheckBox *inspirationCheck;
   QLineEdit *passivePerceptionLabel;
 
-  QJsonObject originalRoot;
-  QJsonObject originalData;
+  CharacterDocument *m_document;
 
   QMap<QString, QSpinBox *> statSpins;
   QMap<QString, QLineEdit *> modLabels;
@@ -147,6 +172,9 @@ private:
   QLineEdit *spellAttackBonusEdit;
   QMap<int, QSpinBox *> spellSlotSpins;
   QMap<int, QHBoxLayout *> spellCirclesLayouts;
+  // Потраченные ячейки заклинаний по уровням: список указателей на pip-кнопки.
+  // Раньше состояние pips не сохранялось (аудит: несохраняемые поля).
+  QMap<int, QList<QPushButton *>> spellSlotPips;
 
   struct SkillInfo {
     QString baseStat;
@@ -159,6 +187,18 @@ private:
   QVBoxLayout *weaponListLayout;
   QGridLayout *attacksGrid;
   QFrame *attacksBlockFrame;
+
+  // --- Автосейв (debounced) ---
+  QTimer *m_autosaveTimer; // single-shot, 3000 мс → saveToFile()
+  QTimer *m_statusTimer;   // single-shot, 2000 мс → скрыть индикатор статуса
+  QLabel *saveStatusLabel; // "Изменения…" → "Сохранено ✓" → ""
+  bool m_loaded = false;   // блокирует markDirty во время начальной настройки
+  void connectDirty(QWidget *w);          // helper: подключить виджет к markDirty
+  void connectDirtyField(QLineEdit *f);   // QLineEdit::textChanged
+  void connectDirtySpin(QSpinBox *s);     // QSpinBox::valueChanged
+  void connectDirtyEdit(QTextEdit *e);    // QTextEdit::textChanged
+  void connectDirtyCheck(QCheckBox *c);   // QCheckBox::toggled
+  void connectDirtyBtn(QPushButton *b);   // QPushButton::toggled/clicked
 };
 
 #endif // CHARACTERSHEET_H

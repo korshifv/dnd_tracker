@@ -1,4 +1,7 @@
 #include "CharacterSheet.h"
+#include "CharacterDocument.h"
+#include "JsonUtils.h"
+#include "Storage.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFile>
@@ -10,6 +13,7 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSpinBox>
@@ -80,9 +84,9 @@ WeaponEditorDialog::WeaponEditorDialog(const WeaponData &data, int profBonus,
   auto *delBtn = new QPushButton("УДАЛИТЬ");
   delBtn->setObjectName("delBtn");
   delBtn->setStyleSheet(
-      "QPushButton { color: #d32f2f; border: 1px solid #d32f2f; padding: 8px; "
-      "border-radius: 4px; } "
-      "QPushButton:hover { background: rgba(211, 47, 47, 0.1); }");
+      "QPushButton { color: palette(highlight); border: 1px solid "
+      "palette(highlight); padding: 8px; border-radius: 4px; } "
+      "QPushButton:hover { background: palette(midlight); }");
   connect(delBtn, &QPushButton::clicked, this, [this]() {
     deleted = true;
     accept();
@@ -122,21 +126,28 @@ WeaponData WeaponEditorDialog::getWeaponData() const {
 }
 
 // --- CharacterSheet Implementation ---
-CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
-                               QWidget *parent)
-    : QDialog(parent), originalRoot(root), originalData(data),
+CharacterSheet::CharacterSheet(CharacterDocument *doc, QWidget *parent)
+    : QWidget(parent), m_document(doc),
       weaponListLayout(nullptr), attacksBlockFrame(nullptr) {
 
-  setWindowTitle("Редактор: " + data["name"].toObject()["value"].toString());
-  resize(1300, 950);
+  const QJsonObject &data = m_document->getData();
 
-  QFile styleFile("styles.qss");
-  if (styleFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    setStyleSheet(styleFile.readAll());
-    styleFile.close();
-  }
+  // Раньше это был QDialog с resize(1300,950)/WA_DeleteOnClose/локальным QSS.
+  // Теперь мы встраиваемся во вкладку: размером управляет вкладка,
+  // lifetime — тоже. Стили — нативная палитра + scoped-правила ниже.
+  setMinimumSize(1100, 800);
+  applyThemeStyle();
 
-  setAttribute(Qt::WA_DeleteOnClose);
+  // Таймеры автосейва: 3с бездействия → saveToFile(); 2с показа "Сохранено ✓".
+  m_autosaveTimer = new QTimer(this);
+  m_autosaveTimer->setSingleShot(true);
+  m_autosaveTimer->setInterval(3000);
+  connect(m_autosaveTimer, &QTimer::timeout, this, &CharacterSheet::saveToFile);
+  m_statusTimer = new QTimer(this);
+  m_statusTimer->setSingleShot(true);
+  m_statusTimer->setInterval(2000);
+  connect(m_statusTimer, &QTimer::timeout, this,
+          [this]() { saveStatusLabel->setText(""); });
 
   auto *mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(10, 10, 10, 10);
@@ -161,6 +172,64 @@ CharacterSheet::CharacterSheet(const QJsonObject &root, const QJsonObject &data,
   mainLayout->addWidget(tabs);
 
   updateAllCalculations();
+
+  // Восстанавливаем состояние полей, которые раньше не сохранялись.
+  // Делаем после создания всех виджетов, чтобы не зависеть от порядка блоков.
+  inspirationCheck->setChecked(JsonUtils::safeGetBool(data, {"inspiration"}));
+
+  // Подписываемся на изменения из документа
+  connect(m_document, &CharacterDocument::hpChanged, this, &CharacterSheet::onDocumentHpChanged);
+
+  // Подключаем автосейв ко всем редактируемым полям. Header- и stat-поля
+  // подключены в своих create*-методах; здесь — остальные.
+  connectDirtySpin(globalProfSpin);
+  connectDirtyCheck(inspirationCheck);
+  connectDirtySpin(acSpin);
+  connectDirtyField(speedEdit);
+  connectDirtyField(hdValueEdit);
+  connectDirtySpin(hpMaxSpin);
+  connectDirtySpin(hpCurrentSpin);
+  connectDirtySpin(hpTempSpin);
+  for (const auto &k : saveProfBtns.keys())
+    connectDirtyBtn(saveProfBtns[k]);
+  for (const auto &k : skillProfBtns.keys())
+    connectDirtyBtn(skillProfBtns[k]);
+  for (auto *btn : deathSavesSuccess)
+    connectDirtyBtn(btn);
+  for (auto *btn : deathSavesFail)
+    connectDirtyBtn(btn);
+  connectDirtyEdit(featuresEdit);
+  connectDirtyEdit(inventoryEdit);
+  connectDirtyField(spellClassEdit);
+  connect(spellAbilityCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, &CharacterSheet::markDirty);
+  for (const auto &k : magicEdits.keys())
+    connectDirtyEdit(magicEdits[k]);
+  for (const auto &k : spellSlotSpins.keys())
+    connectDirtySpin(spellSlotSpins[k]);
+  // traitsEdit/idealsEdit/bondsEdit/flawsEdit создаются в createPersonalityBlock
+  // и сохранены в члены — подключаем здесь.
+  if (traitsEdit) connectDirtyEdit(traitsEdit);
+  if (idealsEdit) connectDirtyEdit(idealsEdit);
+  if (bondsEdit) connectDirtyEdit(bondsEdit);
+  if (flawsEdit) connectDirtyEdit(flawsEdit);
+
+  // Все виджеты созданы и заполнены — разрешаем автосейв. До этого момента
+  // вызовы setValue/setText/pl.:setChecked (в т.ч. updateAllCalculations)
+  // не должны запускать таймер сохранения.
+  m_loaded = true;
+}
+
+QString CharacterSheet::getFilePath() const {
+  return m_document->getFilePath();
+}
+
+void CharacterSheet::onDocumentHpChanged(int newHp) {
+  // Обновляем UI без триггера автосейва
+  bool oldLoaded = m_loaded;
+  m_loaded = false;
+  hpCurrentSpin->setValue(newHp);
+  m_loaded = oldLoaded;
 }
 
 void CharacterSheet::setupMainLayout(QWidget *dashboard,
@@ -169,7 +238,13 @@ void CharacterSheet::setupMainLayout(QWidget *dashboard,
   l->setContentsMargins(10, 10, 10, 10);
   l->setSpacing(15);
 
-  l->addWidget(createHeaderBlock(data));
+  // Помечает блок как плавающую панель (палитровый стиль задан в applyThemeStyle).
+  auto panel = [](QWidget *w) {
+    w->setObjectName("cardPanel");
+    return w;
+  };
+
+  l->addWidget(panel(createHeaderBlock(data)));
 
   auto *colsL = new QHBoxLayout();
   colsL->setSpacing(10);
@@ -182,24 +257,24 @@ void CharacterSheet::setupMainLayout(QWidget *dashboard,
   QStringList stats = {"str", "dex", "con", "int", "wis", "cha"};
   QStringList statNames = {"СИЛА", "ЛОВКОСТЬ", "ТЕЛО", "ИНТ", "МУД", "ХАР"};
   for (int i = 0; i < stats.size(); ++i) {
-    col1->addWidget(createStatBlock(
+    col1->addWidget(panel(createStatBlock(
         statNames[i], stats[i],
-        data["stats"].toObject()[stats[i]].toObject()["score"].toInt()));
+        data["stats"].toObject()[stats[i]].toObject()["score"].toInt())));
   }
   col1->addStretch(1);
 
-  col2->addWidget(createSavingThrowsBlock(data));
-  col2->addWidget(createSkillsBlock(data));
+  col2->addWidget(panel(createSavingThrowsBlock(data)));
+  col2->addWidget(panel(createSkillsBlock(data)));
   col2->addStretch(1);
 
-  col3->addWidget(createCombatStatsBlock(data));
-  col3->addWidget(createHPBlock(data));
-  col3->addWidget(createAttacksBlock(data));
-  col3->addWidget(createEquipmentBlock(data));
+  col3->addWidget(panel(createCombatStatsBlock(data)));
+  col3->addWidget(panel(createHPBlock(data)));
+  col3->addWidget(createAttacksBlock(data)); // сам задаёт objectName attacksFrame
+  col3->addWidget(panel(createEquipmentBlock(data)));
   col3->addStretch(1);
 
-  col4->addWidget(createPersonalityBlock(data));
-  col4->addWidget(createFeaturesBlock(data));
+  col4->addWidget(panel(createPersonalityBlock(data)));
+  col4->addWidget(panel(createFeaturesBlock(data)));
   col4->addStretch(0);
 
   colsL->addLayout(col1);
@@ -238,6 +313,12 @@ QWidget *CharacterSheet::createHeaderBlock(const QJsonObject &data) {
   saveBtn->setFixedSize(140, 40);
   connect(saveBtn, &QPushButton::clicked, this, &CharacterSheet::saveToFile);
 
+  // Индикатор статуса автосейва: "Изменения…" → "Сохранено ✓" → "".
+  saveStatusLabel = new QLabel("");
+  saveStatusLabel->setAlignment(Qt::AlignCenter);
+  saveStatusLabel->setStyleSheet(
+      "color: palette(link); font-size: 0.7em;");
+
   auto addF = [&](const QString &label, QWidget *w, int r, int c, int rs = 1,
                   int cs = 1) {
     auto *v = new QVBoxLayout();
@@ -263,7 +344,24 @@ QWidget *CharacterSheet::createHeaderBlock(const QJsonObject &data) {
   l->setProperty("class", "sublabel");
   lvlV->addWidget(l);
   grid->addLayout(lvlV, 0, 5, 2, 1);
-  grid->addWidget(saveBtn, 0, 6, 2, 1, Qt::AlignCenter);
+
+  // Колонка 6: кнопка сохранения + индикатор статуса под ней.
+  auto *saveCol = new QVBoxLayout();
+  saveCol->setSpacing(2);
+  saveCol->addWidget(saveBtn);
+  saveCol->addWidget(saveStatusLabel);
+  grid->addLayout(saveCol, 0, 6, 2, 1, Qt::AlignCenter);
+
+  // Автосейв: все поля шапки помечают лист как изменённый.
+  connectDirtyField(nameEditField);
+  connectDirtyField(classEdit);
+  connectDirtyField(subclassEdit);
+  connectDirtyField(backgroundEdit);
+  connectDirtyField(raceEdit);
+  connectDirtyField(alignmentEdit);
+  connectDirtyField(expEdit);
+  connectDirtyField(playerNameEdit);
+  connectDirtySpin(levelSpin);
 
   grid->setColumnStretch(0, 2);
   grid->setColumnStretch(2, 1);
@@ -293,6 +391,7 @@ QWidget *CharacterSheet::createStatBlock(const QString &label,
   statSpins[statKey] = sb;
   connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
           &CharacterSheet::updateAllCalculations);
+  connectDirtySpin(sb);
   l->addWidget(t);
   l->addWidget(modVal);
   l->addStretch();
@@ -507,6 +606,16 @@ QWidget *CharacterSheet::createHPBlock(const QJsonObject &data) {
   dsV->addWidget(new QLabel("СМЕРТЬ"), 0, Qt::AlignCenter);
   bot->addWidget(dsF);
   l->addLayout(bot);
+
+  // Восстанавливаем состояние спасбросков смерти из данных.
+  QJsonObject deathSaves = data["deathSaves"].toObject();
+  QJsonArray dsSucc = deathSaves["success"].toArray();
+  for (int i = 0; i < deathSavesSuccess.size() && i < dsSucc.size(); ++i)
+    deathSavesSuccess[i]->setChecked(dsSucc.at(i).toBool());
+  QJsonArray dsFail = deathSaves["fail"].toArray();
+  for (int i = 0; i < deathSavesFail.size() && i < dsFail.size(); ++i)
+    deathSavesFail[i]->setChecked(dsFail.at(i).toBool());
+
   return f;
 }
 
@@ -652,6 +761,7 @@ void CharacterSheet::shrinkAttacksBlock() {
 void CharacterSheet::addNewWeapon() {
   weaponsData.append({"Новое оружие", "str", true, 0, "1к8", ""});
   refreshWeaponList();
+  markDirty();
 }
 
 void CharacterSheet::editWeapon(int index) {
@@ -669,6 +779,7 @@ void CharacterSheet::editWeapon(int index) {
     else
       weaponsData[index] = dlg.getWeaponData();
     refreshWeaponList();
+    markDirty();
   }
 }
 
@@ -787,6 +898,18 @@ void CharacterSheet::setupMagicTab(const QJsonObject &data) {
       header->addWidget(new QLabel("Яч:"));
       header->addWidget(sb);
       header->addWidget(circles);
+
+      // Восстанавливаем сохранённое состояние pips (потраченные ячейки).
+      // Формат spells.expendedSlots: массив уровней, каждый — массив флагов.
+      QJsonArray expended =
+          spellsSlotsData["expendedSlots"].toArray();
+      if (expended.size() > i) {
+        QJsonArray levelPips = expended.at(i).toArray();
+        const auto &pips = spellSlotPips.value(i);
+        for (int p = 0; p < pips.size() && p < levelPips.size(); ++p) {
+          pips.at(p)->setChecked(levelPips.at(p).toBool());
+        }
+      }
     }
     bl->addLayout(header);
     auto *ed = new QTextEdit();
@@ -864,13 +987,93 @@ void CharacterSheet::updateSpellSlots(int l, int c) {
       delete it->widget();
     delete it;
   }
+  spellSlotPips[l].clear(); // старые pip удалены вместе с виджетами
   for (int i = 0; i < c; ++i) {
     auto *btn = new QPushButton();
     btn->setFixedSize(20, 20);
     btn->setCheckable(true);
     btn->setProperty("class", "indicator");
+    connectDirtyBtn(btn);
     lay->addWidget(btn);
+    spellSlotPips[l].append(btn); // запоминаем для сохранения состояния
   }
+}
+
+void CharacterSheet::markDirty() {
+  if (!m_loaded)
+    return;
+  m_autosaveTimer->start(); // перезапуск 3-секундного отсчёта
+  m_statusTimer->stop();
+  saveStatusLabel->setText("Изменения…");
+}
+
+void CharacterSheet::flushSave() {
+  m_autosaveTimer->stop();
+  saveToFile();
+}
+
+// Helper'ы подключения виджетов к markDirty. Используются после создания
+// каждого редактируемого поля, чтобы автосейв реагировал на любые правки.
+void CharacterSheet::connectDirtyField(QLineEdit *f) {
+  connect(f, &QLineEdit::textChanged, this, &CharacterSheet::markDirty);
+}
+void CharacterSheet::connectDirtySpin(QSpinBox *s) {
+  connect(s, QOverload<int>::of(&QSpinBox::valueChanged), this,
+          &CharacterSheet::markDirty);
+}
+void CharacterSheet::connectDirtyEdit(QTextEdit *e) {
+  connect(e, &QTextEdit::textChanged, this, &CharacterSheet::markDirty);
+}
+void CharacterSheet::connectDirtyCheck(QCheckBox *c) {
+  connect(c, &QCheckBox::toggled, this, &CharacterSheet::markDirty);
+}
+void CharacterSheet::connectDirtyBtn(QPushButton *b) {
+  connect(b, &QPushButton::clicked, this, &CharacterSheet::markDirty);
+}
+
+void CharacterSheet::applyThemeStyle() {
+  // Scoped-стили только для конкретных классов/objectName. Важно: НЕ стилизуем
+  // generic QFrame — иначе получим "рамки в рамках". Все цвета — роли палитры,
+  // поэтому светлая/тёмная тема ОС подхватывается автоматически.
+  setStyleSheet(
+      // Плавающие панели блоков на palette(base) с тонкой границей palette(mid).
+      "QFrame#cardPanel, QFrame#attacksFrame, QFrame#magicBox { "
+      "background-color: palette(base); border: 1px solid palette(mid); "
+      "border-radius: 8px; }"
+      // Боевые крупные значения (КД, текущие хиты) — без рамки, акцент шрифтом.
+      "QLineEdit#combatStatValue, QSpinBox#combatStatValue { font-size: 1.5em; "
+      "font-weight: bold; border: none; background: transparent; }"
+      // Кнопка сохранения — акцентная, на palette(highlight).
+      "QPushButton#saveBtn { background-color: palette(highlight); "
+      "color: palette(highlighted-text); font-weight: bold; border-radius: 4px; }"
+      // Вторичные подписи.
+      "QLabel.sublabel { font-size: 0.7em; color: palette(link); }"
+      "QLabel.small-label { font-size: 0.6em; color: palette(link); }"
+      // Круглые индикаторы: спасброски, владение навыками, ячейки заклинаний.
+      "QPushButton.indicator { border: 1px solid palette(mid); border-radius: "
+      "10px; background: transparent; }"
+      "QPushButton.indicator:checked { background-color: palette(text); }"
+      // Индикаторы провала спасбросков смерти — акцент palette(highlight).
+      "QPushButton.indicator-fail { border: 1px solid palette(mid); "
+      "border-radius: 10px; background: transparent; }"
+      "QPushButton.indicator-fail:checked { background-color: palette(highlight); "
+      "border-color: palette(highlight); }"
+      // Владение навыком: 1 — palette(text), 2 — palette(highlight).
+      "QPushButton#prof1 { background-color: palette(text); }"
+      "QPushButton#prof2 { background-color: palette(highlight); "
+      "border-color: palette(highlight); }"
+      // Карточка оружия в списке — ненавязчивая.
+      "QPushButton#weaponCard { background: transparent; border: none; "
+      "border-bottom: 1px solid palette(mid); padding: 2px; border-radius: 4px; "
+      "text-align: left; }"
+      "QPushButton#weaponCard:hover { background: palette(midlight); }"
+      "QLabel.weapon-blob { background-color: palette(alternate-base); "
+      "border-radius: 4px; padding: 2px 8px; color: palette(text); "
+      "font-size: 0.9em; }"
+      // Мелкие кнопки управления размером блока атак.
+      "QPushButton#smallControl { background: palette(button); "
+      "border: 1px solid palette(mid); border-radius: 4px; font-size: 12px; "
+      "padding: 2px; min-width: 20px; }");
 }
 
 QString CharacterSheet::tipTapToPlain(const QJsonObject &o) {
@@ -917,10 +1120,16 @@ QJsonObject CharacterSheet::plainToTipTap(const QString &text) {
 }
 
 void CharacterSheet::saveToFile() {
-  QString path = QFileDialog::getSaveFileName(this, "Save", "", "*.json");
-  if (path.isEmpty())
-    return;
-  QJsonObject d = originalData;
+  QString path = m_document->getFilePath();
+  if (path.isEmpty()) {
+    path = QFileDialog::getSaveFileName(this, "Сохранить чарник",
+                                        Storage::charactersDir(), "*.json");
+    if (path.isEmpty())
+      return;
+    m_document->setFilePath(path);
+  }
+
+  QJsonObject d = m_document->getData();
   d["name"] = QJsonObject{{"value", nameEditField->text()}};
   d["proficiency"] = globalProfSpin->value();
   d["casterClass"] = QJsonObject{{"value", spellClassEdit->text()}};
@@ -934,6 +1143,10 @@ void CharacterSheet::saveToFile() {
   i["playerName"] = QJsonObject{{"value", playerNameEdit->text()}};
   i["level"] = QJsonObject{{"value", levelSpin->value()}};
   d["info"] = i;
+
+  // Вдохновение (inspiration) — раньше не сохранялось (аудит: несохраняемые поля).
+  d["inspiration"] = inspirationCheck->isChecked();
+
   QJsonObject st = d["stats"].toObject();
   for (auto k : statSpins.keys()) {
     QJsonObject s = st[k].toObject();
@@ -958,11 +1171,25 @@ void CharacterSheet::saveToFile() {
   QJsonObject v = d["vitality"].toObject();
   v["ac"] = QJsonObject{{"value", acSpin->value()}};
   v["hp-max"] = QJsonObject{{"value", hpMaxSpin->value()}};
-  v["hp-current"] = hpCurrentSpin->value();
-  v["hp-temp"] = hpTempSpin->value();
+  // Фикс #1 (критический): hp-current/hp-temp сохранялись как голый int,
+  // а загрузка (CharacterCard::loadLssJson) ожидает объект {"value":X}.
+  // После пересохранения HP всегда грузился как 0. Теперь консистентно.
+  v["hp-current"] = QJsonObject{{"value", hpCurrentSpin->value()}};
+  v["hp-temp"] = QJsonObject{{"value", hpTempSpin->value()}};
+  v["initiative"] = QJsonObject{{"value", initEdit->text()}};
   v["speed"] = QJsonObject{{"value", speedEdit->text()}};
   v["hit-die"] = QJsonObject{{"value", hdValueEdit->text()}};
   d["vitality"] = v;
+
+  // Спасброски смерти — раньше не сохранялись (аудит: несохраняемые поля).
+  QJsonArray deathSucc;
+  for (auto *btn : deathSavesSuccess)
+    deathSucc.append(btn->isChecked());
+  QJsonArray deathFail;
+  for (auto *btn : deathSavesFail)
+    deathFail.append(btn->isChecked());
+  d["deathSaves"] = QJsonObject{{"success", deathSucc}, {"fail", deathFail}};
+
   QJsonObject t = d["text"].toObject();
   t["personality"] = plainToTipTap(traitsEdit->toPlainText());
   t["ideals"] = plainToTipTap(idealsEdit->toPlainText());
@@ -992,15 +1219,29 @@ void CharacterSheet::saveToFile() {
     s["value"] = spellSlotSpins[k]->value();
     sps[QString("slots-%1").arg(k)] = s;
   }
+  // Потраченные ячейки заклинаний (pips) — раньше не сохранялись.
+  // Формат: expendedSlots — массив уровней, каждый уровень — массив флагов.
+  QJsonArray expendedSlots;
+  for (int lvl = 0; lvl <= 9; ++lvl) {
+    QJsonArray levelPips;
+    const auto &pips = spellSlotPips.value(lvl);
+    for (auto *btn : pips)
+      levelPips.append(btn->isChecked());
+    expendedSlots.append(levelPips);
+  }
+  sps["expendedSlots"] = expendedSlots;
   d["spells"] = sps;
 
-  QJsonObject r = originalRoot;
-  r["data"] =
-      QString::fromUtf8(QJsonDocument(d).toJson(QJsonDocument::Compact));
-  QFile f(path);
-  if (f.open(QIODevice::WriteOnly)) {
-    f.write(QJsonDocument(r).toJson());
-    f.close();
+  m_document->updateFullData(d);
+  if (m_document->save()) {
+    emit saved(path);       // сообщаем MainWindow перезагрузить карточки
+    // Индикатор автосейва: сброс таймеров, краткая надпись "Сохранено ✓".
+    m_autosaveTimer->stop();
+    saveStatusLabel->setText("Сохранено ✓");
+    m_statusTimer->start(); // через 2с индикатор очистится
+  } else {
+    QMessageBox::warning(this, "Ошибка сохранения",
+                         "Не удалось записать файл:\n" + path);
   }
 }
 

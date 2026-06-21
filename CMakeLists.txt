@@ -17,14 +17,30 @@ set(CMAKE_AUTORCC ON)
 set(PROJECT_SOURCES
     main.cpp
     MainWindow.cpp
+    InitiativeTracker.cpp
+    CharacterRepository.cpp
     TrackerColumn.cpp
     CharacterCard.cpp
     CharacterSheet.cpp
+    NoteEditor.cpp
+    NoteRepository.cpp
+    JsonUtils.cpp
+    CharacterDocument.cpp
+    MarkdownHighlighter.cpp
     # Include headers for IDEs
     MainWindow.h
+    InitiativeTracker.h
+    CharacterRepository.h
     TrackerColumn.h
     CharacterCard.h
     CharacterSheet.h
+    NoteEditor.h
+    NoteRepository.h
+    Storage.h
+    FileUtils.h
+    JsonUtils.h
+    CharacterDocument.h
+    MarkdownHighlighter.h
 )
 
 # Executable
@@ -45,11 +61,4 @@ endif()
 # Installation (optional, but good practice)
 install(TARGETS dnd_tracker
     RUNTIME DESTINATION bin
-)
-
-# Copy styles.qss to build directory on every build
-add_custom_command(TARGET dnd_tracker POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/styles.qss"
-    "$<TARGET_FILE_DIR:dnd_tracker>/styles.qss"
 )

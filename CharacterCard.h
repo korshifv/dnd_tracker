@@ -8,7 +8,9 @@
 class QLineEdit;
 class QSpinBox;
 class QLabel;
+class QPushButton;
 class QGraphicsOpacityEffect;
+class CharacterDocument;
 
 // Виджет карточки персонажа в трекере инициативы
 // Отображает краткую информацию (HP, КД, Инициатива) и предоставляет доступ к
@@ -29,9 +31,31 @@ public:
   // Анимация плавного появления (fade-in) при добавлении карточки
   void animateAppearance();
 
-  // Загрузка данных персонажа из полного JSON файла формата LSS
-  // Извлекает данные из вложенного поля "data"
-  void loadLssJson(const QByteArray &rawData);
+  // Получить временное состояние для сохранения трекера
+  QJsonObject getEphemeralState() const;
+  
+  // Восстановить временное состояние при загрузке трекера
+  void setEphemeralState(const QJsonObject &state);
+
+  // Привязать документ к карточке
+  void setDocument(CharacterDocument *doc);
+  CharacterDocument* getDocument() const;
+
+  // Перезагрузить карточку из документа (используется после сохранения чарника)
+  void reloadFromDocument();
+
+signals:
+  // Запрос открыть полный чарник во вкладке. Вместо создания отдельного окна
+  // (раньше так и было — это порождало множество листов, аудит #4) карточка
+  // просит родителя открыть чарник.
+  void sheetRequested(const QString &filePath);
+
+  // Запрос на привязку документа персонажа (перехватывается MainWindow)
+  void documentRequested(CharacterCard* card, const QString &filePath);
+
+  // Привязка/смена персонажа на карточке. InitiativeTracker дебаунс-сохраняет
+  // состояние трекера, чтобы привязка не терялась.
+  void bindingChanged();
 
 protected:
   // Обработка клика мыши (используется для инициации перетаскивания)
@@ -39,11 +63,10 @@ protected:
   void mouseMoveEvent(QMouseEvent *event) override;
 
 private slots:
-  void applyDamage();   // Применить урон (вычесть из HP)
-  void applyHeal();     // Применить лечение (добавить к HP)
-  void openLssFile();   // Открыть диалог выбора JSON файла персонажа
-  void showFullSheet(); // Открыть полное окно редактирования персонажа
-                        // (CharacterSheet)
+  void applyDamage();    // Применить урон (вычесть из HP)
+  void applyHeal();      // Применить лечение (добавить к HP)
+  void onPersButton();   // Кнопка «перс»: выбор персонажа или открыть чарник
+  void requestSheet();   // Запросить открытие чарника (если данные загружены)
 
 private:
   // Виджеты интерфейса карточки
@@ -53,17 +76,30 @@ private:
   QSpinBox *initSpin;    // Значение инициативы
   QLineEdit *statusEdit; // Строка статусов (например, "Ослеплен", "Сбит с ног")
   QLabel *acLabel;       // Класс доспеха (Armor Class)
+  QPushButton *avatarBtn; // Кнопка-аватар (теперь — выбор цвета)
 
-  // Хранение данных LSS
-  QJsonObject rootLssJson;   // Исходный файл целиком (нужен для сохранения
-                             // структуры при экспорте)
-  QJsonObject characterData; // Распаршенные игровые данные персонажа
-  QString currentFilePath;   // Путь к файлу персонажа
+  // Привязанный документ (nullptr если это безымянный монстр)
+  CharacterDocument *m_document = nullptr;
+  QString currentFilePath; // Оставляем для совместимости Drag&Drop
 
   // Визуальные эффекты
   QGraphicsOpacityEffect *opacityEffect;
 
-  // Устанавливает случайный цвет фона для аватара персонажа
+  // Начальная позиция мыши для старта Drag & Drop (фикс корректного старта).
+  QPoint dragStartPos;
+
+  // Синхронизирует боевые правки (HP) в документ.
+  void syncVitalityToDocument();
+
+  // Диалог выбора персонажа из хранилища (Storage::charactersDir()).
+  // Возвращает выбранный filePath или пустую строку при отмене.
+  QString pickCharacterPath();
+  // Диалог выбора цвета аватара (RGB-ползунки 0–255).
+  void pickColor();
+
+  // Применяет цвет к виджету аватара.
+  void setColor(QWidget *widget, int r, int g, int b);
+  // Случайный пастельный цвет (используется при создании карточки).
   void setRandomColor(QWidget *widget);
 };
 

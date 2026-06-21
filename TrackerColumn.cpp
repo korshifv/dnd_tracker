@@ -2,50 +2,53 @@
 #include "CharacterCard.h"
 #include <QDragEnterEvent>
 #include <QFile>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QSizePolicy>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <vector>
 
 TrackerColumn::TrackerColumn(const QString &title, QWidget *parent)
     : QFrame(parent) {
-  setFixedWidth(360);
-  setAcceptDrops(true); // Разрешаем сброс карточек в эту область
+  setAcceptDrops(true); // Разрешаем сброс карточек и файлов в эту область
 
-  // Настройка внешнего вида колонки (серый фон, темные границы)
-  // Используется setObjectName для стилизации конкретного экземпляра через id
-  setObjectName("TrackerColumn");
-  setStyleSheet("QFrame#TrackerColumn { background-color: palette(window); "
-                "border: 2px solid palette(mid); border-radius: 10px; color: "
-                "palette(window-text); }");
+  // Адаптивная ширина: никакого setFixedWidth. Колонка подстраивается под
+  // содержимое (самую широкую карточку), но не уже комфортного минимума.
+  setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+  setMinimumWidth(280);
+  setFrameShape(QFrame::NoFrame);
+  setAutoFillBackground(true);
 
   auto *l = new QVBoxLayout(this);
-  l->setContentsMargins(10, 10, 10, 10);
+  l->setContentsMargins(8, 8, 8, 8);
+  l->setSpacing(8);
 
   auto *header = new QHBoxLayout();
+  header->setSpacing(6);
 
   auto *sortBtn = new QPushButton("⇅");
   sortBtn->setFixedSize(28, 28);
-  sortBtn->setStyleSheet(
-      "border: 1px solid palette(mid); font-weight: bold; color: "
-      "palette(button-text); background: palette(button);");
   connect(sortBtn, &QPushButton::clicked, this, &TrackerColumn::sortInitiative);
 
   titleEdit = new QLineEdit(title);
   titleEdit->setAlignment(Qt::AlignCenter);
-  titleEdit->setStyleSheet(
-      "QLineEdit { font-size: 18px; font-weight: bold; "
-      "border: none; background: transparent; color: palette(window-text); }");
+  QFont titleFont = titleEdit->font();
+  titleFont.setPointSize(14);
+  titleFont.setBold(true);
+  titleEdit->setFont(titleFont);
+  titleEdit->setFrame(false);
 
   auto *delCol = new QPushButton("×");
   delCol->setFixedSize(28, 28);
-  delCol->setStyleSheet(
-      "border: none; font-size: 20px; font-weight: bold; "
-      "background: transparent; color: palette(window-text);");
+  QFont delFont = delCol->font();
+  delFont.setPointSize(16);
+  delFont.setBold(true);
+  delCol->setFont(delFont);
   connect(delCol, &QPushButton::clicked, this, &TrackerColumn::deleteLater);
 
   header->addWidget(sortBtn);
@@ -54,26 +57,37 @@ TrackerColumn::TrackerColumn(const QString &title, QWidget *parent)
   l->addLayout(header);
 
   auto *btn = new QPushButton("+ Персонаж");
-  btn->setStyleSheet(
-      "border: 1px solid palette(mid); font-weight: bold; padding: 8px; color: "
-      "palette(button-text); background: palette(button);");
+  QFont addFont = btn->font();
+  addFont.setBold(true);
+  btn->setFont(addFont);
   connect(btn, &QPushButton::clicked, this, &TrackerColumn::addCharacter);
 
-  auto *s = new QScrollArea();
-  s->setWidgetResizable(true);
-  s->setFrameShape(QFrame::NoFrame);
-  s->setStyleSheet("background: transparent;");
+  scrollArea = new QScrollArea();
+  scrollArea->setWidgetResizable(true);
+  scrollArea->setFrameShape(QFrame::NoFrame);
+  scrollArea->setStyleSheet("background: transparent;");
 
   QWidget *c = new QWidget();
   listLayout = new QVBoxLayout(c);
   listLayout->setAlignment(Qt::AlignTop);
   listLayout->setSpacing(10);
   listLayout->setContentsMargins(5, 5, 5, 5);
-  s->setWidget(c);
+  scrollArea->setWidget(c);
 
   l->addWidget(btn);
-  l->addWidget(s);
+  l->addWidget(scrollArea);
   addCharacter();
+}
+
+// Настройка сигналов карточки: проброс запроса чарника и уведомление об
+// изменении привязки.
+void TrackerColumn::setupCard(CharacterCard *card) {
+  connect(card, &CharacterCard::sheetRequested, this,
+          &TrackerColumn::sheetRequested);
+  connect(card, &CharacterCard::documentRequested, this,
+          &TrackerColumn::documentRequested);
+  connect(card, &CharacterCard::bindingChanged, this,
+          &TrackerColumn::contentsChanged);
 }
 
 void TrackerColumn::sortInitiative() {
@@ -95,51 +109,112 @@ void TrackerColumn::sortInitiative() {
     card->animateAppearance(); // Анимация для визуального подтверждения
                                // сортировки
   }
+  emit contentsChanged();
 }
 
 void TrackerColumn::dragEnterEvent(QDragEnterEvent *event) {
-  if (event->mimeData()->hasFormat("application/x-charactercard"))
+  if (event->mimeData()->hasFormat("application/x-charactercard") ||
+      event->mimeData()->hasFormat("application/x-character-filepath"))
     event->acceptProposedAction();
 }
+
 void TrackerColumn::dragMoveEvent(QDragMoveEvent *event) {
   event->acceptProposedAction();
 }
-// Обработка события "броска" карточки (Drop)
-void TrackerColumn::dropEvent(QDropEvent *event) {
-  // Получение указателя на карточку из MIME-данных
-  qintptr ptr =
-      event->mimeData()->data("application/x-charactercard").toLongLong();
-  CharacterCard *card = reinterpret_cast<CharacterCard *>(ptr);
 
-  if (card) {
-    // Определение позиции вставки на основе координаты Y курсора
+// Обработка события "броска" карточки (Drop).
+// Поддерживает два MIME-типа:
+//  1) application/x-charactercard — перемещение существующей карточки (ptr)
+//  2) application/x-character-filepath — новый персонаж из хранилища (filePath)
+void TrackerColumn::dropEvent(QDropEvent *event) {
+  const QMimeData *mime = event->mimeData();
+
+  // --- Случай 1: перемещение существующей карточки ---
+  if (mime->hasFormat("application/x-charactercard")) {
+    qintptr ptr =
+        mime->data("application/x-charactercard").toLongLong();
+    auto *card = reinterpret_cast<CharacterCard *>(ptr);
+
+    // Фикс #5 (UAF-risk): проверяем, что это вообще QObject и при том CharacterCard.
+    if (!card) {
+      event->ignore();
+      return;
+    }
+    if (!qobject_cast<CharacterCard *>(card)) {
+      event->ignore();
+      return;
+    }
+
+    // Конвертируем позицию в систему координат контента скролла.
+    const QPoint posInContent =
+        scrollArea->widget()->mapFrom(this, event->position().toPoint());
+
     int index = 0;
     for (int i = 0; i < listLayout->count(); ++i) {
       QWidget *w = listLayout->itemAt(i)->widget();
-      if (w && event->position().y() > w->geometry().center().y())
+      if (w && posInContent.y() > w->geometry().center().y())
         index = i + 1;
     }
 
-    // Вставка карточки в новую позицию
     listLayout->insertWidget(index, card);
     card->animateAppearance();
     event->acceptProposedAction();
+    emit contentsChanged();
+    return;
   }
+
+  // --- Случай 2: новый персонаж из хранилища (drag из CharacterRepository) ---
+  if (mime->hasFormat("application/x-character-filepath")) {
+    const QString filePath =
+        QString::fromUtf8(mime->data("application/x-character-filepath"));
+
+    const QPoint posInContent =
+        scrollArea->widget()->mapFrom(this, event->position().toPoint());
+
+    int index = 0;
+    for (int i = 0; i < listLayout->count(); ++i) {
+      QWidget *w = listLayout->itemAt(i)->widget();
+      if (w && posInContent.y() > w->geometry().center().y())
+        index = i + 1;
+    }
+
+    insertCharacter(index, filePath);
+    event->acceptProposedAction();
+    return;
+  }
+
+  event->ignore();
 }
 
 void TrackerColumn::addCharacter() {
-  listLayout->addWidget(new CharacterCard(this));
+  auto *card = new CharacterCard(this);
+  setupCard(card);
+  listLayout->addWidget(card);
+  emit contentsChanged();
 }
 
-void TrackerColumn::loadCharacter(const QString &filePath) {
+void TrackerColumn::insertCharacter(int index, const QString &filePath, const QJsonObject &ephemeralState) {
   auto *card = new CharacterCard(this);
-  listLayout->addWidget(card);
+  setupCard(card);
 
-  QFile file(filePath);
-  if (file.open(QIODevice::ReadOnly)) {
-    card->loadLssJson(file.readAll());
-    card->setFilePath(filePath);
+  if (index >= 0 && index < listLayout->count())
+    listLayout->insertWidget(index, card);
+  else
+    listLayout->addWidget(card);
+
+  if (!filePath.isEmpty()) {
+    emit documentRequested(card, filePath);
   }
+  
+  if (!ephemeralState.isEmpty()) {
+    card->setEphemeralState(ephemeralState);
+  }
+
+  emit contentsChanged();
+}
+
+void TrackerColumn::loadCharacter(const QString &filePath, const QJsonObject &ephemeralState) {
+  insertCharacter(-1, filePath, ephemeralState);
 }
 
 QString TrackerColumn::getTitle() const { return titleEdit->text(); }
