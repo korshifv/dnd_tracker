@@ -24,6 +24,9 @@ public:
   // Возвращает значение инициативы для сортировки в колонке
   int getInitiative() const;
 
+  // Возвращает имя персонажа
+  QString getName() const;
+
   // Геттеры и сеттеры для пути к файлу (нужно для сохранения состояния)
   QString getFilePath() const;
   void setFilePath(const QString &path);

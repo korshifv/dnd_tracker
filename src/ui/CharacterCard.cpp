@@ -313,6 +313,10 @@ void CharacterCard::animateAppearance() {
 
 int CharacterCard::getInitiative() const { return initSpin->value(); }
 
+QString CharacterCard::getName() const {
+  return nameEdit ? nameEdit->text() : QString();
+}
+
 QString CharacterCard::getFilePath() const { return currentFilePath; }
 
 void CharacterCard::setFilePath(const QString &path) { currentFilePath = path; }
@@ -364,6 +368,8 @@ void CharacterCard::mousePressEvent(QMouseEvent *event) {
 }
 
 void CharacterCard::mouseMoveEvent(QMouseEvent *event) {
+  // На мобильных / тач-устройствах не запускаем Drag, чтобы не блокировать пальцевый скролл списка
+#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS)
   if (!(event->buttons() & Qt::LeftButton))
     return;
 
@@ -375,17 +381,17 @@ void CharacterCard::mouseMoveEvent(QMouseEvent *event) {
   QDrag *drag = new QDrag(this);
   QMimeData *mimeData = new QMimeData;
 
-  // Передаем указатель на текущую карточку как MIME-данные
   mimeData->setData("application/x-charactercard",
                     QByteArray::number((qintptr)this));
 
   drag->setMimeData(mimeData);
-
-  // Можно добавить "фантомное" изображение карточки при перетаскивании
   drag->setPixmap(grab());
   drag->setHotSpot(event->position().toPoint());
 
   drag->exec(Qt::MoveAction);
+#else
+  QFrame::mouseMoveEvent(event);
+#endif
 }
 
 CharacterCard::~CharacterCard() {}

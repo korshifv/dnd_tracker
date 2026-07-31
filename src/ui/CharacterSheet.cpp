@@ -2,6 +2,7 @@
 #include "CharacterDocument.h"
 #include "JsonUtils.h"
 #include "Storage.h"
+#include "TouchUtils.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QFile>
@@ -161,6 +162,11 @@ CharacterSheet::CharacterSheet(CharacterDocument *doc, QWidget *parent)
   auto *scroll = new QScrollArea();
   scroll->setWidgetResizable(true);
   scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+  // Включаем сенсорный инерционный скролл под пальцы
+  TouchUtils::enableTouchScroll(scroll);
+
   auto *dashboard = new QWidget();
   dashboard->setObjectName("dashboard");
   scroll->setWidget(dashboard);

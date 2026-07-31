@@ -3,96 +3,195 @@
 #include "CharacterDocument.h"
 #include "Storage.h"
 #include "TrackerColumn.h"
+#include "TouchUtils.h"
 #include <QDir>
 #include <QFile>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <algorithm>
 
-// Конструктор вкладки инициативы
 InitiativeTracker::InitiativeTracker(QWidget *parent) : QWidget(parent) {
-  // Debounce-таймер: после любого изменения состояния трекера ждём 1500мс
-  // тишины и сохраняем. Если за это время произошло ещё одно изменение —
-  // таймер перезапускается.
   m_saveTimer = new QTimer(this);
   m_saveTimer->setSingleShot(true);
   m_saveTimer->setInterval(1500);
   connect(m_saveTimer, &QTimer::timeout, this, [this]() { saveState(); });
 
-  // Основной вертикальный лейаут
   auto *root = new QVBoxLayout(this);
+  root->setContentsMargins(10, 10, 10, 10);
+  root->setSpacing(10);
 
-  // Верхняя панель с кнопками
+  // === ⚔️ ПАНЕЛЬ УПРАВЛЕНИЯ БОЕМ (COMBAT BANNER) ===
+  QFrame *banner = new QFrame(this);
+  banner->setObjectName("combatBanner");
+  banner->setStyleSheet(
+      "QFrame#combatBanner { background-color: #1E1E28; border: 2px solid #8C62FF; "
+      "border-radius: 12px; padding: 10px; }"
+      "QLabel#turnText { font-size: 18px; font-weight: bold; color: #FFFFFF; }"
+      "QLabel#roundText { font-size: 14px; font-weight: 600; color: #A57BFF; }");
+
+  auto *bannerLayout = new QHBoxLayout(banner);
+  bannerLayout->setContentsMargins(10, 6, 10, 6);
+  bannerLayout->setSpacing(12);
+
+  m_turnLabel = new QLabel("⚔️ БОЙ НЕ НАЧАТ", banner);
+  m_turnLabel->setObjectName("turnText");
+
+  m_roundLabel = new QLabel("Раунд: 1", banner);
+  m_roundLabel->setObjectName("roundText");
+
+  m_nextTurnBtn = new QPushButton("▶ СЛЕДУЮЩИЙ ХОД", banner);
+  m_nextTurnBtn->setObjectName("primaryBtn");
+  m_nextTurnBtn->setMinimumHeight(44);
+  m_nextTurnBtn->setStyleSheet(
+      "QPushButton#primaryBtn { background-color: #8C62FF; color: white; "
+      "font-size: 15px; font-weight: bold; border-radius: 8px; padding: 8px 16px; }"
+      "QPushButton#primaryBtn:hover { background-color: #9D75FF; }");
+  connect(m_nextTurnBtn, &QPushButton::clicked, this, &InitiativeTracker::nextTurn);
+
+  auto *resetBtn = new QPushButton("↻ Сброс", banner);
+  resetBtn->setMinimumHeight(40);
+  connect(resetBtn, &QPushButton::clicked, this, &InitiativeTracker::resetCombat);
+
+  bannerLayout->addWidget(m_turnLabel, 1);
+  bannerLayout->addWidget(m_roundLabel);
+  bannerLayout->addWidget(m_nextTurnBtn);
+  bannerLayout->addWidget(resetBtn);
+
+  root->addWidget(banner);
+
+  // === ВЕРХНИЕ КНОПКИ УПРАВЛЕНИЯ ГРУППАМИ ===
   auto *topPanel = new QHBoxLayout();
 
-  // Кнопка создания новой группы (колонки)
-  auto *btn = new QPushButton("+ Создать новую группу", this);
-  btn->setFixedHeight(38);
-  QFont btnFont = btn->font();
-  btnFont.setBold(true);
-  btn->setFont(btnFont);
-  connect(btn, &QPushButton::clicked, this, &InitiativeTracker::addColumn);
+  auto *addColBtn = new QPushButton("+ Добавить группу", this);
+  addColBtn->setFixedHeight(40);
+  connect(addColBtn, &QPushButton::clicked, this, &InitiativeTracker::addColumn);
 
-  // Кнопка очистки данных
+  auto *sortAllBtn = new QPushButton("⇅ Сортировать всё", this);
+  sortAllBtn->setFixedHeight(40);
+  connect(sortAllBtn, &QPushButton::clicked, this, &InitiativeTracker::sortAllColumns);
+
   auto *clearBtn = new QPushButton("Очистить все");
-  clearBtn->setFixedHeight(38);
-  clearBtn->setFont(btnFont);
-  connect(clearBtn, &QPushButton::clicked, this,
-          &InitiativeTracker::clearAllData);
+  clearBtn->setFixedHeight(40);
+  connect(clearBtn, &QPushButton::clicked, this, &InitiativeTracker::clearAllData);
 
-  topPanel->addWidget(btn);
+  topPanel->addWidget(addColBtn);
+  topPanel->addWidget(sortAllBtn);
   topPanel->addStretch();
   topPanel->addWidget(clearBtn);
 
-  // Область прокрутки для колонок, чтобы они помещались если их много
-  auto *s = new QScrollArea(this);
-  s->setWidgetResizable(true);       // Контент внутри растягивается
-  s->setFrameShape(QFrame::NoFrame); // Без рамок
+  root->addLayout(topPanel);
 
-  // Контейнер для колонок
+  // === ОБЛАСТЬ СИНХРОННОГО СКРОЛЛИНГА КОЛОНОК ===
+  auto *scroll = new QScrollArea(this);
+  scroll->setWidgetResizable(true);
+  scroll->setFrameShape(QFrame::NoFrame);
+  scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  TouchUtils::enableTouchScroll(scroll);
+
   QWidget *c = new QWidget();
   columnsLayout = new QHBoxLayout(c);
-  columnsLayout->setAlignment(Qt::AlignLeft); // Колонки прижимаются влево
-  s->setWidget(c);
+  columnsLayout->setAlignment(Qt::AlignLeft);
+  columnsLayout->setContentsMargins(0, 0, 0, 0);
+  columnsLayout->setSpacing(12);
+  scroll->setWidget(c);
 
-  // Добавляем элементы в главный лейаут
-  root->addLayout(topPanel);
-  root->addWidget(s);
+  root->addWidget(scroll);
 
-  // Загружаем сохраненное состояние
   loadState();
 
-  // Если ничего не загрузилось, создаем одну пустую колонку
   if (columnsLayout->count() == 0) {
     addColumn();
   }
 }
 
-// Добавляет новую колонку трекера в интерфейс
+QList<CharacterCard *> InitiativeTracker::getAllCardsSorted() const {
+  QList<CharacterCard *> allCards;
+  for (int i = 0; i < columnsLayout->count(); ++i) {
+    auto *col = qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
+    if (col) {
+      allCards.append(col->getCards());
+    }
+  }
+
+  // Сортировка по убыванию инициативы
+  std::sort(allCards.begin(), allCards.end(), [](CharacterCard *a, CharacterCard *b) {
+    return a->getInitiative() > b->getInitiative();
+  });
+
+  return allCards;
+}
+
+void InitiativeTracker::sortAllColumns() {
+  for (int i = 0; i < columnsLayout->count(); ++i) {
+    auto *col = qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
+    if (col) {
+      col->sortInitiative();
+    }
+  }
+  updateTurnBanner();
+}
+
+void InitiativeTracker::nextTurn() {
+  QList<CharacterCard *> cards = getAllCardsSorted();
+  if (cards.isEmpty()) {
+    m_turnLabel->setText("⚔️ БОЙ НЕ НАЧАТ (нет бойцов)");
+    return;
+  }
+
+  m_currentTurnIndex++;
+  if (m_currentTurnIndex >= cards.size()) {
+    m_currentTurnIndex = 0;
+    m_roundCount++;
+  }
+
+  updateTurnBanner();
+}
+
+void InitiativeTracker::resetCombat() {
+  m_roundCount = 1;
+  m_currentTurnIndex = -1;
+  updateTurnBanner();
+}
+
+void InitiativeTracker::updateTurnBanner() {
+  QList<CharacterCard *> cards = getAllCardsSorted();
+  
+  m_roundLabel->setText(QString("Раунд: %1").arg(m_roundCount));
+
+  if (cards.isEmpty() || m_currentTurnIndex < 0 || m_currentTurnIndex >= cards.size()) {
+    m_turnLabel->setText("⚔️ НАЖМИТЕ «СЛЕДУЮЩИЙ ХОД»");
+    return;
+  }
+
+  CharacterCard *activeCard = cards.at(m_currentTurnIndex);
+  QString name = activeCard->getName();
+  if (name.isEmpty()) name = "Безымянный";
+  int init = activeCard->getInitiative();
+
+  m_turnLabel->setText(QString("⚔️ СЕЙЧАС ХОДИТ: %1 (Инициатива: %2)").arg(name).arg(init));
+}
+
 void InitiativeTracker::addColumn() {
   auto *col = new TrackerColumn(
       "Группа " + QString::number(columnsLayout->count() + 1), this);
-  // Пробрасываем запрос чарника от карточек наверх к MainWindow.
-  connect(col, &TrackerColumn::sheetRequested, this,
-          &InitiativeTracker::sheetRequested);
-  connect(col, &TrackerColumn::documentRequested, this,
-          &InitiativeTracker::requestDocumentBinding);
-  // Любое изменение содержимого колонки → debounce-сохранение.
-  connect(col, &TrackerColumn::contentsChanged, this,
-          &InitiativeTracker::scheduleSave);
+  connect(col, &TrackerColumn::sheetRequested, this, &InitiativeTracker::sheetRequested);
+  connect(col, &TrackerColumn::documentRequested, this, &InitiativeTracker::requestDocumentBinding);
+  connect(col, &TrackerColumn::contentsChanged, this, &InitiativeTracker::scheduleSave);
   columnsLayout->addWidget(col);
-  emit scheduleSave(); // Новая колонка — это тоже изменение состояния
+  emit scheduleSave();
 }
 
 void InitiativeTracker::scheduleSave() {
-  // Перезапуск одноразового таймера (если уже тикает — сбросит и начнёт заново).
   m_saveTimer->start();
 }
 
@@ -101,10 +200,8 @@ void InitiativeTracker::saveState() {
   QJsonArray columnsArr;
 
   for (int i = 0; i < columnsLayout->count(); ++i) {
-    auto *col =
-        qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
-    if (!col)
-      continue;
+    auto *col = qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
+    if (!col) continue;
 
     QJsonObject colObj;
     colObj["title"] = col->getTitle();
@@ -112,12 +209,10 @@ void InitiativeTracker::saveState() {
     QJsonArray cardsArr;
     for (auto *card : col->getCards()) {
       QJsonObject cardObj;
-      // Мы сохраняем карточку в любом случае, даже если у нее нет привязанного файла
-      // (например, это созданный вручную монстр с эфемеральным стейтом).
       if (card->getDocument()) {
         cardObj["path"] = card->getDocument()->getFilePath();
       } else {
-        cardObj["path"] = card->property("currentFilePath").toString(); // fallback
+        cardObj["path"] = card->property("currentFilePath").toString();
       }
       cardObj["state"] = card->getEphemeralState();
       cardsArr.append(cardObj);
@@ -126,8 +221,9 @@ void InitiativeTracker::saveState() {
     columnsArr.append(colObj);
   }
   state["columns"] = columnsArr;
+  state["roundCount"] = m_roundCount;
+  state["currentTurnIndex"] = m_currentTurnIndex;
 
-  // Фикс #6: пишем в AppData, а не в CWD.
   QFile file(Storage::stateFilePath());
   if (file.open(QIODevice::WriteOnly)) {
     file.write(QJsonDocument(state).toJson());
@@ -141,25 +237,20 @@ void InitiativeTracker::loadState() {
 
   QJsonParseError error;
   QJsonDocument doc = QJsonDocument::fromJson(file.readAll(), &error);
-  if (doc.isNull()) {
-    QMessageBox::warning(this, "Ошибка загрузки",
-                         "Не удалось прочитать файл состояния: " +
-                             error.errorString());
-    return;
-  }
+  if (doc.isNull()) return;
 
   QJsonObject state = doc.object();
+  m_roundCount = state["roundCount"].toInt(1);
+  m_currentTurnIndex = state["currentTurnIndex"].toInt(-1);
+
   QJsonArray columnsArr = state["columns"].toArray();
 
   for (const auto &colVal : columnsArr) {
     QJsonObject colObj = colVal.toObject();
     auto *col = new TrackerColumn(colObj["title"].toString(), this);
-    connect(col, &TrackerColumn::sheetRequested, this,
-            &InitiativeTracker::sheetRequested);
-    connect(col, &TrackerColumn::documentRequested, this,
-            &InitiativeTracker::requestDocumentBinding);
-    connect(col, &TrackerColumn::contentsChanged, this,
-            &InitiativeTracker::scheduleSave);
+    connect(col, &TrackerColumn::sheetRequested, this, &InitiativeTracker::sheetRequested);
+    connect(col, &TrackerColumn::documentRequested, this, &InitiativeTracker::requestDocumentBinding);
+    connect(col, &TrackerColumn::contentsChanged, this, &InitiativeTracker::scheduleSave);
     columnsLayout->addWidget(col);
 
     QJsonArray cardsArr = colObj["cards"].toArray();
@@ -167,57 +258,50 @@ void InitiativeTracker::loadState() {
       QJsonObject cardObj = cardVal.toObject();
       QString path = cardObj["path"].toString();
       QJsonObject ephemeralState = cardObj["state"].toObject();
-      
-      // Загружаем карточку через TrackerColumn
       col->insertCharacter(-1, path, ephemeralState);
     }
   }
+
+  updateTurnBanner();
 }
 
 void InitiativeTracker::clearAllData() {
   if (QMessageBox::question(this, "Очистка данных",
                             "Вы уверены? Все сохраненные состояния и локальные "
-                            "файлы персонажей будут удалены.") !=
-      QMessageBox::Yes) {
+                            "файлы персонажей будут удалены.") != QMessageBox::Yes) {
     return;
   }
 
-  // Удаляем файл состояния
   QFile::remove(Storage::stateFilePath());
 
-  // Удаляем папку персонажов
   QDir dir(Storage::charactersDir());
   if (dir.exists()) {
     dir.removeRecursively();
-    dir.mkpath("."); // пересоздаём пустую
+    dir.mkpath(".");
   }
 
-  // Перезапускаем интерфейс (удаляем все колонки)
   QLayoutItem *child;
   while ((child = columnsLayout->takeAt(0)) != nullptr) {
-    if (child->widget())
-      delete child->widget();
+    if (child->widget()) delete child->widget();
     delete child;
   }
 
-  // Добавляем одну пустую
+  m_roundCount = 1;
+  m_currentTurnIndex = -1;
+
   addColumn();
+  updateTurnBanner();
 }
 
 void InitiativeTracker::save() {
-  // Останавливаем debounce-таймер и сохраняем немедленно.
   m_saveTimer->stop();
   saveState();
 }
 
 void InitiativeTracker::reloadCardsForFile(const QString &filePath) {
-  // Перебираем все колонки и их карточки; перезагружаем те, что привязаны к
-  // filePath. Фикс #2 — после сохранения чарника карточки обновляются.
   for (int i = 0; i < columnsLayout->count(); ++i) {
-    auto *col =
-        qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
-    if (!col)
-      continue;
+    auto *col = qobject_cast<TrackerColumn *>(columnsLayout->itemAt(i)->widget());
+    if (!col) continue;
     for (auto *card : col->getCards()) {
       if (card->getDocument() && card->getDocument()->getFilePath() == filePath)
         card->reloadFromDocument();

@@ -2,16 +2,17 @@
 #define INITIATIVETRACKER_H
 
 #include <QWidget>
+#include <QList>
 
 class QHBoxLayout;
+class QLabel;
+class QPushButton;
 class TrackerColumn;
 class QTimer;
 class CharacterCard;
 
-// Виджет вкладки трекера инициативы.
-// Извлечён из MainWindow при реструктуризации в табовое приложение:
-// верхняя панель с группами + горизонтальный скролл колонок персонажей.
-// Является источником истины для боевого состояния инициативы.
+// Виджет трекера инициативы с единой логикой боя для ПК и мобилок.
+// Имеет верхнюю панель управления боем: "СЕЙЧАС ХОДИТ: ...", "Раунд N", кнопку "Следующий ход".
 class InitiativeTracker : public QWidget {
   Q_OBJECT
 public:
@@ -30,23 +31,38 @@ signals:
   // Проброс запроса на привязку документа в MainWindow.
   void requestDocumentBinding(CharacterCard* card, const QString &filePath);
 
+public slots:
+  // Переход к следующему ходу в бое
+  void nextTurn();
+  // Сброс боя (раунд 1, первый персонаж)
+  void resetCombat();
+  // Отсортировать все карточки во всех колонках по инициативе
+  void sortAllColumns();
+
 private slots:
-  // Debounce-сохранение: запускает одноразовый таймер на 1500мс.
-  // Если таймер уже тикает — перезапускает.
   void scheduleSave();
-  // Добавление новой колонки (Группы).
   void addColumn();
-  // Очистка всех данных и состояния с подтверждением.
   void clearAllData();
 
 private:
-  // Сохранение текущего состояния (колонки, персонажи) в JSON.
   void saveState();
-  // Восстановление состояния из JSON при запуске.
   void loadState();
 
-  QHBoxLayout *columnsLayout; // Лейаут для горизонтального размещения колонок
-  QTimer *m_saveTimer;        // Debounce-таймер автосохранения (1500мс)
+  // Обновить плашку текущего хода
+  void updateTurnBanner();
+  // Получить отсортированный список всех карточек боя
+  QList<CharacterCard *> getAllCardsSorted() const;
+
+  QHBoxLayout *columnsLayout; // Лейаут для колонок
+  QTimer *m_saveTimer;        // Debounce-таймер автосохранения
+
+  // Панель управления боем
+  QLabel *m_turnLabel;
+  QLabel *m_roundLabel;
+  QPushButton *m_nextTurnBtn;
+  
+  int m_roundCount = 1;
+  int m_currentTurnIndex = -1;
 };
 
 #endif // INITIATIVETRACKER_H
