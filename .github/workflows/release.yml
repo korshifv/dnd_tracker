@@ -1,0 +1,150 @@
+name: Release Builds (Android & Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Python for aqtinstall
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install aqtinstall
+        run: pip install aqtinstall
+
+      - name: Install Qt 6.6.3 for Android
+        run: |
+          aqt install-qt linux android 6.6.3 android_arm64_v8a --outputdir ${{ runner.workspace }}/Qt
+
+      - name: Install Qt 6.6.3 Desktop Host Tools
+        run: |
+          aqt install-qt linux desktop 6.6.3 gcc_64 --outputdir ${{ runner.workspace }}/Qt
+
+      - name: Configure CMake
+        run: |
+          mkdir build-android
+          cd build-android
+          ${{ runner.workspace }}/Qt/6.6.3/android_arm64_v8a/bin/qt-cmake .. \
+            -DANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME \
+            -DQT_HOST_PATH="${{ runner.workspace }}/Qt/6.6.3/gcc_64" \
+            -DANDROID_ABI=arm64-v8a
+
+      - name: Build C++ library and APK
+        run: |
+          cd build-android
+          cmake --build . --parallel $(nproc)
+          cmake --build . --target apk
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p bin-output
+          find build-android -name "*.apk" -exec cp {} bin-output/dnd_tracker.apk \;
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnd_tracker-android
+          path: bin-output/dnd_tracker.apk
+
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python for aqtinstall
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install aqtinstall
+        run: pip install aqtinstall
+
+      - name: Install Qt 6.6.3 for Windows
+        run: |
+          aqt install-qt windows desktop 6.6.3 win64_msvc2019_64 --outputdir ${{ runner.workspace }}/Qt
+
+      - name: Setup MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build Windows App
+        run: |
+          mkdir build-win
+          cd build-win
+          cmake -G "NMake Makefiles" .. -DCMAKE_PREFIX_PATH="${{ runner.workspace }}/Qt/6.6.3/msvc2019_64" -DCMAKE_BUILD_TYPE=Release
+          nmake
+
+      - name: Package with windeployqt
+        shell: cmd
+        run: |
+          mkdir dist
+          copy build-win\dnd_tracker.exe dist\
+          ${{ runner.workspace }}\Qt\6.6.3\msvc2019_64\bin\windeployqt.exe --no-compiler-runtime dist\dnd_tracker.exe
+
+      - name: Zip Windows App
+        shell: powershell
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath dnd_tracker-windows.zip
+
+      - name: Upload Windows Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: dnd_tracker-windows
+          path: dnd_tracker-windows.zip
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dnd_tracker-android
+          path: release-files
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dnd_tracker-windows
+          path: release-files
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-files/dnd_tracker.apk
+            release-files/dnd_tracker-windows.zip
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## DnD Tracker Release ${{ github.ref_name }} 🎲
+
+            ### Скачать / Download:
+            - 📱 **Android (ARM64)**: `dnd_tracker.apk`
+            - 🖥️ **Windows (x64)**: `dnd_tracker-windows.zip`
+
+            Enjoy your D&D sessions! 🎉
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
