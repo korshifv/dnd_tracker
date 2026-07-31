@@ -43,9 +43,9 @@ cd "$BUILD_DIR"
 
 echo "Running qt-cmake..."
 "$QT_DIR/6.6.3/android_arm64_v8a/bin/qt-cmake" "$PROJECT_DIR" \
-    -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI=arm64-v8a \
-    -DANDROID_PLATFORM=android-23
+    -DANDROID_NDK_ROOT="$NDK_DIR" \
+    -DQT_HOST_PATH="$QT_DIR/6.6.3/gcc_64" \
+    -DANDROID_ABI=arm64-v8a
 
 echo "Compiling C++ sources for arm64-v8a..."
 cmake --build . --parallel $(nproc)

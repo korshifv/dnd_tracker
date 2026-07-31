@@ -43,15 +43,8 @@ set(PROJECT_SOURCES
     MarkdownHighlighter.h
 )
 
-# Executable or Android Shared Library
-if(ANDROID)
-    add_library(dnd_tracker SHARED ${PROJECT_SOURCES})
-    set_target_properties(dnd_tracker PROPERTIES
-        QT_ANDROID_PACKAGE_NAME "org.dnd_tracker.app"
-    )
-else()
-    add_executable(dnd_tracker ${PROJECT_SOURCES})
-endif()
+# Cross-platform Qt executable (handles Android APK packaging automatically)
+qt_add_executable(dnd_tracker ${PROJECT_SOURCES})
 
 # Target linking
 target_link_libraries(dnd_tracker PRIVATE 
