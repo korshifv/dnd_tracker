@@ -7,16 +7,19 @@
 #include "NoteEditor.h"
 #include "Storage.h"
 #include "CharacterDocument.h"
+#include "TouchUtils.h"
+
 #include <QCloseEvent>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStackedWidget>
 #include <QTabWidget>
-#include <QVBoxLayout>
-
-#include "TouchUtils.h"
 #include <QTabBar>
+#include <QVBoxLayout>
+#include <QPushButton>
+#include <QLabel>
 #include <QGuiApplication>
 #include <QScreen>
 
@@ -26,35 +29,38 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
 #ifdef Q_OS_ANDROID
   showMaximized();
 #else
-  resize(1300, 900);
+  resize(1200, 800);
 #endif
 
-  auto *root = new QVBoxLayout(this);
-  root->setContentsMargins(0, 0, 0, 0);
-  root->setSpacing(0);
+  auto *rootLayout = new QVBoxLayout(this);
+  rootLayout->setContentsMargins(0, 0, 0, 0);
+  rootLayout->setSpacing(0);
 
-  tabs = new QTabWidget(this);
-  tabs->setTabsClosable(true);
-  tabs->setMovable(true);
+  m_stack = new QStackedWidget(this);
 
-  // На Android / мобилках перемещаем панель навигации ВНИЗ (Bottom Bar) для удобства пальцев
+  // === СТРАНИЦА 0: Главный контейнер с 3 кнопками навигации ===
+  QWidget *mainPage = new QWidget(this);
+  auto *mainLayout = new QVBoxLayout(mainPage);
+  mainLayout->setContentsMargins(0, 0, 0, 0);
+  mainLayout->setSpacing(0);
+
+  tabs = new QTabWidget(mainPage);
+  tabs->setTabsClosable(false);
+  tabs->setMovable(false);
+
+  // Перемещаем панель навигации вниз на мобильных устройствах
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
   tabs->setTabPosition(QTabWidget::South);
 #else
-  // На десктопе проверяем ширину экрана: если маленький — переставляем вниз
   if (QGuiApplication::primaryScreen() && QGuiApplication::primaryScreen()->size().width() < 768) {
     tabs->setTabPosition(QTabWidget::South);
   }
 #endif
 
-  connect(tabs, &QTabWidget::tabCloseRequested, this,
-          &MainWindow::onTabCloseRequested);
-
-  // Вкладка 0: трекер инициативы.
+  // Вкладка 0: Инициатива
   tracker = new InitiativeTracker(this);
-  tabs->addTab(tracker, "⚔ Инициатива");
-  connect(tracker, &InitiativeTracker::sheetRequested, this,
-          &MainWindow::openCharacterSheet);
+  tabs->addTab(tracker, "Инициатива");
+  connect(tracker, &InitiativeTracker::sheetRequested, this, &MainWindow::openCharacterSheet);
   connect(tracker, &InitiativeTracker::requestDocumentBinding, this,
           [this](CharacterCard *card, const QString &filePath) {
             if (auto *doc = getDocument(filePath)) {
@@ -62,15 +68,14 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
             }
           });
 
-  // Вкладка 1: хранилище персонажей.
+  // Вкладка 1: Чарники
   repository = new CharacterRepository(this);
-  tabs->addTab(repository, "📜 Чарники");
-  connect(repository, &CharacterRepository::openRequested, this,
-          &MainWindow::openCharacterSheet);
+  tabs->addTab(repository, "Чарники");
+  connect(repository, &CharacterRepository::openRequested, this, &MainWindow::openCharacterSheet);
 
-  // Вкладка 2: заметки (Obsidian-style wiki-links).
+  // Вкладка 2: Заметки
   noteRepo = new NoteRepository(this);
-  tabs->addTab(noteRepo, "📝 Заметки");
+  tabs->addTab(noteRepo, "Заметки");
   connect(noteRepo, &NoteRepository::requestOpenCharacter, this,
           [this](const QString &charName) {
             QString path = CharacterRepository::filePathForName(charName);
@@ -78,16 +83,42 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
               openCharacterSheet(path);
           });
 
-  // Убираем мелкие крестики закрытия у фиксированных вкладок (0, 1, 2)
-  for (int i = 0; i < FIXED_TAB_COUNT; ++i) {
-    tabs->tabBar()->setTabButton(i, QTabBar::RightSide, nullptr);
-    tabs->tabBar()->setTabButton(i, QTabBar::LeftSide, nullptr);
-  }
-
-  // Включаем тач-скроллинг
   TouchUtils::enableTouchScroll(tabs);
+  mainLayout->addWidget(tabs);
+  m_stack->addWidget(mainPage); // Стек 0
 
-  root->addWidget(tabs);
+  // === СТРАНИЦА 1: Полноэкранный просмотрщик чарника ===
+  m_sheetContainer = new QWidget(this);
+  auto *sheetContainerLayout = new QVBoxLayout(m_sheetContainer);
+  sheetContainerLayout->setContentsMargins(0, 0, 0, 0);
+  sheetContainerLayout->setSpacing(0);
+
+  // Верхний навигационный бары чарника
+  QWidget *topBarWidget = new QWidget(m_sheetContainer);
+  topBarWidget->setStyleSheet("background-color: #1A1A24; border-bottom: 1px solid #2A2A38;");
+  auto *topBarLayout = new QHBoxLayout(topBarWidget);
+  topBarLayout->setContentsMargins(10, 8, 10, 8);
+
+  QPushButton *backBtn = new QPushButton("← Назад", topBarWidget);
+  backBtn->setMinimumHeight(42);
+  backBtn->setStyleSheet(
+      "QPushButton { background-color: #262634; color: white; font-weight: bold; "
+      "border-radius: 8px; padding: 6px 14px; }"
+      "QPushButton:hover { background-color: #36364A; }");
+  connect(backBtn, &QPushButton::clicked, this, &MainWindow::closeCharacterSheet);
+
+  m_sheetTitleLabel = new QLabel("Персонаж", topBarWidget);
+  m_sheetTitleLabel->setStyleSheet("font-size: 16px; font-weight: bold; color: #A57BFF;");
+
+  topBarLayout->addWidget(backBtn);
+  topBarLayout->addWidget(m_sheetTitleLabel, 1, Qt::AlignCenter);
+  topBarLayout->addSpacing(60); // Балансировка ширины
+
+  sheetContainerLayout->addWidget(topBarWidget);
+
+  m_stack->addWidget(m_sheetContainer); // Стек 1
+
+  rootLayout->addWidget(m_stack);
 }
 
 CharacterDocument* MainWindow::getDocument(const QString &filePath) {
@@ -104,74 +135,45 @@ CharacterDocument* MainWindow::getDocument(const QString &filePath) {
 }
 
 void MainWindow::openCharacterSheet(const QString &filePath) {
-  if (filePath.isEmpty())
-    return;
+  if (filePath.isEmpty()) return;
 
   CharacterDocument *doc = getDocument(filePath);
   if (!doc) return;
 
-  // Заголовок вкладки — имя персонажа.
+  // Очищаем предыдущий открытый активный чарник
+  if (m_activeSheet) {
+    m_activeSheet->flushSave();
+    m_activeSheet->deleteLater();
+    m_activeSheet = nullptr;
+  }
+
+  // Создаем полноэкранный чарник
+  m_activeSheet = new CharacterSheet(doc, m_sheetContainer);
+  connect(m_activeSheet, &CharacterSheet::saved, tracker, &InitiativeTracker::reloadCardsForFile);
+
+  m_sheetContainer->layout()->addWidget(m_activeSheet);
+
   QString title = doc->getName();
-  if (title.isEmpty())
-    title = "Чарник";
+  if (title.isEmpty()) title = "Персонаж";
+  m_sheetTitleLabel->setText(title);
 
-  openSheetTab(filePath, title);
+  // Переключаемся на полноэкранный просмотр (Стек 1)
+  m_stack->setCurrentIndex(1);
 }
 
-void MainWindow::openSheetTab(const QString &filePath, const QString &title) {
-  // Дедупликация: динамический поиск вкладки.
-  for (int i = FIXED_TAB_COUNT; i < tabs->count(); ++i) {
-    if (auto *sheet = qobject_cast<CharacterSheet*>(tabs->widget(i))) {
-      if (sheet->getFilePath() == filePath) {
-        tabs->setCurrentIndex(i);
-        return;
-      }
-    }
+void MainWindow::closeCharacterSheet() {
+  if (m_activeSheet) {
+    m_activeSheet->flushSave();
   }
-
-  CharacterDocument *doc = getDocument(filePath);
-  if (!doc) return;
-
-  auto *sheet = new CharacterSheet(doc, this);
-  // После сохранения перезагружаем карточки трекера с этим filePath (фикс #2).
-  connect(sheet, &CharacterSheet::saved, tracker,
-          &InitiativeTracker::reloadCardsForFile);
-
-  const int idx = tabs->addTab(sheet, title);
-  tabs->setCurrentIndex(idx);
-}
-
-void MainWindow::onTabCloseRequested(int index) {
-  // Защита незакрываемых вкладок (Инициатива, Чарники, Заметки).
-  if (index < FIXED_TAB_COUNT)
-    return;
-
-  QWidget *w = tabs->widget(index);
-  if (auto *sheet = qobject_cast<CharacterSheet*>(w)) {
-    sheet->flushSave();
-    
-    // Если закрыта последняя вкладка с этим документом, можно освободить память
-    // Но так как у нас может быть карточка инициативы, ссылающаяся на него,
-    // мы пока оставим кэш на совести MainWindow (освободится при закрытии приложения),
-    // или можно реализовать счетчик ссылок.
-  }
-
-  tabs->removeTab(index);
-  delete w;
+  // Возвращаемся на главный экран (Стек 0)
+  m_stack->setCurrentIndex(0);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-  // FlushSave всех открытых чарников
-  for (int i = FIXED_TAB_COUNT; i < tabs->count(); ++i) {
-    if (auto *sheet = qobject_cast<CharacterSheet*>(tabs->widget(i))) {
-      sheet->flushSave();
-    }
+  if (m_activeSheet) {
+    m_activeSheet->flushSave();
   }
-
-  // Также flushSave для NoteRepository (который теперь содержит NoteEditor)
   noteRepo->flushSave();
-
-  // InitiativeTracker встроен во вкладку — сохраняем состояние явно.
   tracker->save();
   event->accept();
 }

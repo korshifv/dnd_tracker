@@ -72,11 +72,10 @@ CharacterRepository::CharacterRepository(QWidget *parent) : QWidget(parent) {
   // Список персонажей (с поддержкой D&D).
   list = new RepositoryListWidget(this);
   list->setAlternatingRowColors(true);
-  list->setStyleSheet("QListWidget::item { padding: 8px; }");
-  connect(list, &QListWidget::itemActivated, this,
-          &CharacterRepository::onItemActivated);
-  connect(list, &QListWidget::itemDoubleClicked, this,
-          &CharacterRepository::onItemActivated);
+  list->setStyleSheet("QListWidget::item { padding: 14px; font-weight: bold; border-bottom: 1px solid #282836; }");
+  connect(list, &QListWidget::itemClicked, this, &CharacterRepository::onItemActivated);
+  connect(list, &QListWidget::itemActivated, this, &CharacterRepository::onItemActivated);
+  connect(list, &QListWidget::itemDoubleClicked, this, &CharacterRepository::onItemActivated);
   root->addWidget(list, 1);
 
   countLabel = new QLabel();

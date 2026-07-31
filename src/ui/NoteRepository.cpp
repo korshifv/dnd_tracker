@@ -158,7 +158,7 @@ NoteRepository::NoteRepository(QWidget *parent) : QWidget(parent) {
 }
 
 void NoteRepository::refresh() {
-  countLabel->setText(QString("Папка: %1").arg(Storage::notesDir()));
+  countLabel->setText("");
 }
 
 void NoteRepository::flushSave() {

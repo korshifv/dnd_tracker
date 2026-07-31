@@ -5,48 +5,48 @@
 #include <QWidget>
 
 class QTabWidget;
+class QStackedWidget;
+class QLabel;
+class QPushButton;
 class InitiativeTracker;
 class CharacterRepository;
 class NoteRepository;
 class CharacterDocument;
+class CharacterSheet;
 
-// Главное окно приложения — контейнер вкладок (browser-style).
-// Вкладки:
-//   [0] «Инициатива»   — InitiativeTracker (незакрываемая)
-//   [1] «Чарники»      — CharacterRepository (незакрываемая)
-//   [2] «Заметки»      — NoteRepository (незакрываемая)
-//   [3..N] «<Имя> ×»   — открытые чарники/заметки (закрываемые)
+// Главное окно приложения.
+// Использует QStackedWidget для полноценной полноэкранной навигации:
+//   Стек [0]: Главный экран приложения (3 фиксированные вкладки: Инициатива, Чарники, Заметки)
+//   Стек [1]: Полноэкранный просмотрщик/редактор чарника (с кнопкой "← Назад")
 class MainWindow : public QWidget {
   Q_OBJECT
 public:
   explicit MainWindow(QWidget *parent = nullptr);
   ~MainWindow();
 
-  // Количество фиксированных (незакрываемых) вкладок.
-  static constexpr int FIXED_TAB_COUNT = 3;
-
 protected:
-  // Перехват закрытия окна: flushSave всех динамических вкладок + save трекера.
   void closeEvent(QCloseEvent *event) override;
 
 private slots:
-  // Запрос на открытие чарника во вкладке (от трекера или хранилища).
+  // Полноэкранное открытие чарника из хранилища или инициативы
   void openCharacterSheet(const QString &filePath);
-  // Закрытие вкладки по крестику (индексы < FIXED_TAB_COUNT игнорируем).
-  void onTabCloseRequested(int index);
+  // Возврат из полноэкранного чарника на главный экран
+  void closeCharacterSheet();
 
 private:
-  // Получить или загрузить документ персонажа (кэшируется)
   CharacterDocument* getDocument(const QString &filePath);
 
-  // Открыть/переключиться на вкладку чарника. filePath — путь к LSS-файлу.
-  // Дедупликация: динамический поиск вкладки по filePath.
-  void openSheetTab(const QString &filePath, const QString &title);
+  QStackedWidget *m_stack;        // Стековый переключатель экранов
+  QTabWidget *tabs;               // 3 фиксированные главные вкладки
 
-  QTabWidget *tabs;
   InitiativeTracker *tracker;
   CharacterRepository *repository;
   NoteRepository *noteRepo;
+
+  // Контейнер полноэкранного просмотра чарника (Страница 1)
+  QWidget *m_sheetContainer;
+  QLabel *m_sheetTitleLabel;
+  CharacterSheet *m_activeSheet = nullptr;
 
   // Кэш загруженных документов: filePath -> CharacterDocument*
   QHash<QString, CharacterDocument*> m_documents;
