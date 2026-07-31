@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(dnd_tracker VERSION 1.1.2 LANGUAGES CXX)
+project(dnd_tracker VERSION 1.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -45,6 +45,7 @@ set(PROJECT_HEADERS
     src/ui/NoteRepository.h
     src/ui/MarkdownHighlighter.h
     src/ui/TouchUtils.h
+    src/ui/MobileTheme.h
 )
 
 # Cross-platform Qt executable (handles Android APK packaging automatically)

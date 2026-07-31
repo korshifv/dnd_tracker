@@ -15,18 +15,38 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
+#include "TouchUtils.h"
+#include <QTabBar>
+#include <QGuiApplication>
+#include <QScreen>
+
 MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
   setWindowTitle("D&D Tracker");
+
+#ifdef Q_OS_ANDROID
+  showMaximized();
+#else
   resize(1300, 900);
+#endif
 
   auto *root = new QVBoxLayout(this);
   root->setContentsMargins(0, 0, 0, 0);
   root->setSpacing(0);
 
   tabs = new QTabWidget(this);
-  // Закрываемые вкладки для чарников/заметок; фиксированные защищены в слоте.
   tabs->setTabsClosable(true);
   tabs->setMovable(true);
+
+  // На Android / мобилках перемещаем панель навигации ВНИЗ (Bottom Bar) для удобства пальцев
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+  tabs->setTabPosition(QTabWidget::South);
+#else
+  // На десктопе проверяем ширину экрана: если маленький — переставляем вниз
+  if (QGuiApplication::primaryScreen() && QGuiApplication::primaryScreen()->size().width() < 768) {
+    tabs->setTabPosition(QTabWidget::South);
+  }
+#endif
+
   connect(tabs, &QTabWidget::tabCloseRequested, this,
           &MainWindow::onTabCloseRequested);
 
@@ -57,6 +77,15 @@ MainWindow::MainWindow(QWidget *parent) : QWidget(parent) {
             if (!path.isEmpty())
               openCharacterSheet(path);
           });
+
+  // Убираем мелкие крестики закрытия у фиксированных вкладок (0, 1, 2)
+  for (int i = 0; i < FIXED_TAB_COUNT; ++i) {
+    tabs->tabBar()->setTabButton(i, QTabBar::RightSide, nullptr);
+    tabs->tabBar()->setTabButton(i, QTabBar::LeftSide, nullptr);
+  }
+
+  // Включаем тач-скроллинг
+  TouchUtils::enableTouchScroll(tabs);
 
   root->addWidget(tabs);
 }
