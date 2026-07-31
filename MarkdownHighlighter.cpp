@@ -1,6 +1,7 @@
 #include "MarkdownHighlighter.h"
 #include <QApplication>
 #include <QPalette>
+#include <utility>
 
 MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
     : QSyntaxHighlighter(parent) {
@@ -41,7 +42,7 @@ MarkdownHighlighter::MarkdownHighlighter(QTextDocument *parent)
 }
 
 void MarkdownHighlighter::highlightBlock(const QString &text) {
-    for (const HighlightingRule &rule : qAsConst(highlightingRules)) {
+    for (const HighlightingRule &rule : std::as_const(highlightingRules)) {
         QRegularExpressionMatchIterator matchIterator = rule.pattern.globalMatch(text);
         while (matchIterator.hasNext()) {
             QRegularExpressionMatch match = matchIterator.next();

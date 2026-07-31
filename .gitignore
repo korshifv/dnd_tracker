@@ -18,8 +18,11 @@ moc_*.cpp
 
 # Build directories
 build/
+build-android/
 cmake-build-*/
 .vscode/
+*.apk
+*.log
 
 # IDE
 .idea/
