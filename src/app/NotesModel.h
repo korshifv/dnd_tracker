@@ -22,6 +22,7 @@ public:
     Q_INVOKABLE bool createNote(const QString &parentPath, const QString &name);
     Q_INVOKABLE bool createFolder(const QString &parentPath, const QString &name);
     Q_INVOKABLE bool renameAt(int row, const QString &newName);
+    Q_INVOKABLE bool moveAt(int row, const QString &targetFolder);
     Q_INVOKABLE bool removeAt(int row);
     Q_INVOKABLE QString pathByTitle(const QString &title) const;
 
