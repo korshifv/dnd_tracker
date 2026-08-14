@@ -234,7 +234,6 @@ Item {
             Layout.fillHeight: true
             currentIndex: sheetTabs.currentIndex
 
-            // --- Основное ---
             Flickable {
                 id: basicsFlick
                 contentWidth: width
@@ -329,7 +328,6 @@ Item {
                                     LabeledField { id: speedField; Layout.fillWidth: true; label: ""; text: page.details.speed || "" }
                                 }
                                 LabeledField { id: hitDieField; Layout.fillWidth: true; label: "КОСТЬ ХИТОВ"; text: page.details.hitDie || "" }
-
                                 Label { text: "СПАСБРОСКИ ОТ СМЕРТИ"; color: Theme.textMuted; font.pixelSize: 11 }
                                 RowLayout {
                                     Label { text: "Успех"; color: Theme.success }
@@ -372,12 +370,36 @@ Item {
                                 columns: basicsFlick.width < 620 ? 2 : 6
                                 columnSpacing: 8
                                 rowSpacing: 8
-                                ColumnLayout { Label { text: "СИЛ"; color: Theme.textMuted }; SpinBox { id: strSpin; from: 1; to: 30; editable: true; value: page.details.str || 10 }; Label { text: page.signed(page.statModifier("str")); color: Theme.accentStrong } }
-                                ColumnLayout { Label { text: "ЛОВ"; color: Theme.textMuted }; SpinBox { id: dexSpin; from: 1; to: 30; editable: true; value: page.details.dex || 10 }; Label { text: page.signed(page.statModifier("dex")); color: Theme.accentStrong } }
-                                ColumnLayout { Label { text: "ТЕЛ"; color: Theme.textMuted }; SpinBox { id: conSpin; from: 1; to: 30; editable: true; value: page.details.con || 10 }; Label { text: page.signed(page.statModifier("con")); color: Theme.accentStrong } }
-                                ColumnLayout { Label { text: "ИНТ"; color: Theme.textMuted }; SpinBox { id: intSpin; from: 1; to: 30; editable: true; value: page.details.int || 10 }; Label { text: page.signed(page.statModifier("int")); color: Theme.accentStrong } }
-                                ColumnLayout { Label { text: "МУД"; color: Theme.textMuted }; SpinBox { id: wisSpin; from: 1; to: 30; editable: true; value: page.details.wis || 10 }; Label { text: page.signed(page.statModifier("wis")); color: Theme.accentStrong } }
-                                ColumnLayout { Label { text: "ХАР"; color: Theme.textMuted }; SpinBox { id: chaSpin; from: 1; to: 30; editable: true; value: page.details.cha || 10 }; Label { text: page.signed(page.statModifier("cha")); color: Theme.accentStrong } }
+                                ColumnLayout {
+                                    Label { text: "СИЛ"; color: Theme.textMuted }
+                                    SpinBox { id: strSpin; from: 1; to: 30; editable: true; value: page.details.str || 10 }
+                                    Label { text: page.signed(page.statModifier("str")); color: Theme.accentStrong }
+                                }
+                                ColumnLayout {
+                                    Label { text: "ЛОВ"; color: Theme.textMuted }
+                                    SpinBox { id: dexSpin; from: 1; to: 30; editable: true; value: page.details.dex || 10 }
+                                    Label { text: page.signed(page.statModifier("dex")); color: Theme.accentStrong }
+                                }
+                                ColumnLayout {
+                                    Label { text: "ТЕЛ"; color: Theme.textMuted }
+                                    SpinBox { id: conSpin; from: 1; to: 30; editable: true; value: page.details.con || 10 }
+                                    Label { text: page.signed(page.statModifier("con")); color: Theme.accentStrong }
+                                }
+                                ColumnLayout {
+                                    Label { text: "ИНТ"; color: Theme.textMuted }
+                                    SpinBox { id: intSpin; from: 1; to: 30; editable: true; value: page.details.int || 10 }
+                                    Label { text: page.signed(page.statModifier("int")); color: Theme.accentStrong }
+                                }
+                                ColumnLayout {
+                                    Label { text: "МУД"; color: Theme.textMuted }
+                                    SpinBox { id: wisSpin; from: 1; to: 30; editable: true; value: page.details.wis || 10 }
+                                    Label { text: page.signed(page.statModifier("wis")); color: Theme.accentStrong }
+                                }
+                                ColumnLayout {
+                                    Label { text: "ХАР"; color: Theme.textMuted }
+                                    SpinBox { id: chaSpin; from: 1; to: 30; editable: true; value: page.details.cha || 10 }
+                                    Label { text: page.signed(page.statModifier("cha")); color: Theme.accentStrong }
+                                }
                             }
                         }
                     }
@@ -385,7 +407,6 @@ Item {
                 }
             }
 
-            // --- Спасброски и навыки ---
             Flickable {
                 id: skillsFlick
                 contentWidth: width
@@ -397,7 +418,6 @@ Item {
                     id: skillsContent
                     width: skillsFlick.width
                     spacing: 14
-
                     Surface {
                         Layout.fillWidth: true
                         Layout.margins: 16
@@ -468,7 +488,6 @@ Item {
                 }
             }
 
-            // --- Описание ---
             Flickable {
                 id: textFlick
                 contentWidth: width
@@ -488,10 +507,46 @@ Item {
                         columnSpacing: 14
                         rowSpacing: 14
 
-                        Surface { Layout.fillWidth: true; implicitHeight: 190; ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "ЧЕРТЫ ХАРАКТЕРА"; color: Theme.textMuted }; TextArea { id: personalityEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.personality || ""; wrapMode: TextArea.Wrap } } }
-                        Surface { Layout.fillWidth: true; implicitHeight: 190; ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "ИДЕАЛЫ"; color: Theme.textMuted }; TextArea { id: idealsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.ideals || ""; wrapMode: TextArea.Wrap } } }
-                        Surface { Layout.fillWidth: true; implicitHeight: 190; ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "ПРИВЯЗАННОСТИ"; color: Theme.textMuted }; TextArea { id: bondsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.bonds || ""; wrapMode: TextArea.Wrap } } }
-                        Surface { Layout.fillWidth: true; implicitHeight: 190; ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "СЛАБОСТИ"; color: Theme.textMuted }; TextArea { id: flawsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.flaws || ""; wrapMode: TextArea.Wrap } } }
+                        Surface {
+                            Layout.fillWidth: true
+                            implicitHeight: 190
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                Label { text: "ЧЕРТЫ ХАРАКТЕРА"; color: Theme.textMuted }
+                                TextArea { id: personalityEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.personality || ""; wrapMode: TextArea.Wrap }
+                            }
+                        }
+                        Surface {
+                            Layout.fillWidth: true
+                            implicitHeight: 190
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                Label { text: "ИДЕАЛЫ"; color: Theme.textMuted }
+                                TextArea { id: idealsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.ideals || ""; wrapMode: TextArea.Wrap }
+                            }
+                        }
+                        Surface {
+                            Layout.fillWidth: true
+                            implicitHeight: 190
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                Label { text: "ПРИВЯЗАННОСТИ"; color: Theme.textMuted }
+                                TextArea { id: bondsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.bonds || ""; wrapMode: TextArea.Wrap }
+                            }
+                        }
+                        Surface {
+                            Layout.fillWidth: true
+                            implicitHeight: 190
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                Label { text: "СЛАБОСТИ"; color: Theme.textMuted }
+                                TextArea { id: flawsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.flaws || ""; wrapMode: TextArea.Wrap }
+                            }
+                        }
                     }
 
                     Surface {
@@ -499,20 +554,29 @@ Item {
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
                         implicitHeight: 230
-                        ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "УМЕНИЯ И ОСОБЕННОСТИ"; color: Theme.textMuted }; TextArea { id: featuresEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.features || ""; wrapMode: TextArea.Wrap } }
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            Label { text: "УМЕНИЯ И ОСОБЕННОСТИ"; color: Theme.textMuted }
+                            TextArea { id: featuresEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.features || ""; wrapMode: TextArea.Wrap }
+                        }
                     }
                     Surface {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
                         implicitHeight: 230
-                        ColumnLayout { anchors.fill: parent; anchors.margins: 12; Label { text: "СНАРЯЖЕНИЕ"; color: Theme.textMuted }; TextArea { id: equipmentEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.equipment || ""; wrapMode: TextArea.Wrap } }
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            Label { text: "СНАРЯЖЕНИЕ"; color: Theme.textMuted }
+                            TextArea { id: equipmentEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.equipment || ""; wrapMode: TextArea.Wrap }
+                        }
                     }
                     Item { Layout.preferredHeight: 16 }
                 }
             }
 
-            // --- Оружие ---
             Item {
                 ColumnLayout {
                     anchors.fill: parent
@@ -564,7 +628,6 @@ Item {
                 }
             }
 
-            // --- Магия ---
             Flickable {
                 id: magicFlick
                 contentWidth: width
@@ -576,7 +639,6 @@ Item {
                     id: magicContent
                     width: magicFlick.width
                     spacing: 14
-
                     Surface {
                         Layout.fillWidth: true
                         Layout.margins: 16
@@ -601,8 +663,14 @@ Item {
                                         onActivated: page.spellAbility = page.casterAbilityCodes[currentIndex]
                                     }
                                 }
-                                ColumnLayout { Label { text: "СЛ СПАСБРОСКА"; color: Theme.textMuted; font.pixelSize: 11 }; Label { text: 8 + proficiencySpin.value + page.spellModifier(); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold } }
-                                ColumnLayout { Label { text: "БОНУС АТАКИ"; color: Theme.textMuted; font.pixelSize: 11 }; Label { text: page.signed(proficiencySpin.value + page.spellModifier()); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold } }
+                                ColumnLayout {
+                                    Label { text: "СЛ СПАСБРОСКА"; color: Theme.textMuted; font.pixelSize: 11 }
+                                    Label { text: 8 + proficiencySpin.value + page.spellModifier(); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold }
+                                }
+                                ColumnLayout {
+                                    Label { text: "БОНУС АТАКИ"; color: Theme.textMuted; font.pixelSize: 11 }
+                                    Label { text: page.signed(proficiencySpin.value + page.spellModifier()); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold }
+                                }
                             }
                         }
                     }
