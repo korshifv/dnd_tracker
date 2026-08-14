@@ -1,33 +1,45 @@
-#include "MainWindow.h"
+#include "AppController.h"
+#include "CharacterRepositoryModel.h"
+#include "InitiativeModel.h"
+#include "NotesModel.h"
 #include "Storage.h"
-#include "MobileTheme.h"
-#include <QApplication>
-#include <QMessageBox>
 
-// Точка входа в приложение
+#include <QCoreApplication>
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QDebug>
+
 int main(int argc, char *argv[]) {
-  // Имя приложения/организации — обязательно до создания виджетов:
-  QApplication::setApplicationName("dnd_tracker");
-  QApplication::setOrganizationName("dnd_tracker");
+    QCoreApplication::setApplicationName("dnd_tracker");
+    QCoreApplication::setOrganizationName("dnd_tracker");
+    QCoreApplication::setApplicationVersion("2.0.0");
 
-  // Инициализация графического приложения Qt
-  QApplication a(argc, argv);
+    QGuiApplication app(argc, argv);
 
-  // Применяем современную тёмную тему и стили для мобилок и ПК
-  a.setStyleSheet(MobileTheme::getStylesheet());
+    if (!Storage::ensureDirs()) {
+        qCritical() << "Unable to create application data directory:"
+                    << Storage::appDataDir();
+        return 1;
+    }
 
-  // Гарантируем, что папки хранения существуют.
-  if (!Storage::ensureDirs()) {
-    QMessageBox::critical(
-        nullptr, "Ошибка запуска",
-        "Не удалось создать папку данных приложения:\n" + Storage::appDataDir() +
-            "\n\nПроверьте права доступа.");
-  }
+    CharacterRepositoryModel characters;
+    InitiativeModel initiative;
+    NotesModel notes;
+    AppController controller(&characters, &initiative, &notes);
 
-  // Создание и отображение главного окна
-  MainWindow w;
-  w.show();
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("App", &controller);
+    engine.rootContext()->setContextProperty("Characters", &characters);
+    engine.rootContext()->setContextProperty("Initiative", &initiative);
+    engine.rootContext()->setContextProperty("Notes", &notes);
 
-  // Запуск цикла обработки событий
-  return a.exec();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit,
+                     &initiative, &InitiativeModel::flush);
+
+    engine.loadFromModule("DndTracker", "Main");
+    if (engine.rootObjects().isEmpty())
+        return 1;
+
+    return app.exec();
 }
