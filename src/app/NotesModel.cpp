@@ -1,0 +1,158 @@
+#include "NotesModel.h"
+#include "Storage.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QSaveFile>
+#include <utility>
+
+NotesModel::NotesModel(QObject *parent) : QAbstractListModel(parent) { refresh(); }
+
+int NotesModel::rowCount(const QModelIndex &parent) const {
+    return parent.isValid() ? 0 : m_entries.size();
+}
+
+QVariant NotesModel::data(const QModelIndex &index, int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_entries.size()) return {};
+    const Entry &entry = m_entries.at(index.row());
+    switch (role) {
+    case Qt::DisplayRole:
+    case TitleRole: return entry.title;
+    case RelativePathRole: return entry.relativePath;
+    case IsFolderRole: return entry.isFolder;
+    case DepthRole: return entry.depth;
+    default: return {};
+    }
+}
+
+QHash<int, QByteArray> NotesModel::roleNames() const {
+    return {{TitleRole, "title"}, {RelativePathRole, "relativePath"},
+            {IsFolderRole, "isFolder"}, {DepthRole, "depth"}};
+}
+
+void NotesModel::refresh() {
+    QVector<Entry> next;
+    scanDirectory(Storage::notesDir(), QString(), 0, next);
+    beginResetModel();
+    m_entries = std::move(next);
+    endResetModel();
+}
+
+QString NotesModel::loadText(const QString &relativePath) const {
+    if (relativePath.isEmpty()) return {};
+    QFile file(absolutePath(relativePath));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
+    return QString::fromUtf8(file.readAll());
+}
+
+bool NotesModel::saveText(const QString &relativePath, const QString &text) {
+    if (relativePath.isEmpty()) return false;
+    QSaveFile file(absolutePath(relativePath));
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit operationFailed(tr("Не удалось сохранить заметку"));
+        return false;
+    }
+    file.write(text.toUtf8());
+    if (!file.commit()) {
+        emit operationFailed(tr("Не удалось атомарно записать заметку"));
+        return false;
+    }
+    return true;
+}
+
+bool NotesModel::createNote(const QString &parentPath, const QString &name) {
+    const QString safe = sanitizeName(name);
+    if (safe.isEmpty()) return false;
+    QString parent = absolutePath(parentPath);
+    if (!QDir(parent).exists()) parent = Storage::notesDir();
+    const QString path = QDir(parent).filePath(safe + ".md");
+    if (QFileInfo::exists(path)) {
+        emit operationFailed(tr("Заметка с таким именем уже существует"));
+        return false;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        emit operationFailed(tr("Не удалось создать заметку"));
+        return false;
+    }
+    file.close();
+    refresh();
+    return true;
+}
+
+bool NotesModel::createFolder(const QString &parentPath, const QString &name) {
+    const QString safe = sanitizeName(name);
+    if (safe.isEmpty()) return false;
+    QString parent = absolutePath(parentPath);
+    if (!QDir(parent).exists()) parent = Storage::notesDir();
+    if (!QDir(parent).mkdir(safe)) {
+        emit operationFailed(tr("Не удалось создать папку"));
+        return false;
+    }
+    refresh();
+    return true;
+}
+
+bool NotesModel::renameAt(int row, const QString &newName) {
+    if (row < 0 || row >= m_entries.size()) return false;
+    const QString safe = sanitizeName(newName);
+    if (safe.isEmpty()) return false;
+    const Entry entry = m_entries.at(row);
+    const QString oldPath = absolutePath(entry.relativePath);
+    QFileInfo info(oldPath);
+    QString fileName = safe + (entry.isFolder ? QString() : QStringLiteral(".md"));
+    const QString newPath = info.dir().filePath(fileName);
+    if (QFileInfo::exists(newPath)) {
+        emit operationFailed(tr("Объект с таким именем уже существует"));
+        return false;
+    }
+    if (!QDir().rename(oldPath, newPath)) {
+        emit operationFailed(tr("Не удалось переименовать"));
+        return false;
+    }
+    refresh();
+    return true;
+}
+
+bool NotesModel::removeAt(int row) {
+    if (row < 0 || row >= m_entries.size()) return false;
+    const Entry entry = m_entries.at(row);
+    const QString path = absolutePath(entry.relativePath);
+    const bool ok = entry.isFolder ? QDir(path).removeRecursively() : QFile::remove(path);
+    if (!ok) {
+        emit operationFailed(tr("Не удалось удалить %1").arg(entry.title));
+        return false;
+    }
+    refresh();
+    return true;
+}
+
+QString NotesModel::absolutePath(const QString &relativePath) const {
+    if (relativePath.isEmpty()) return Storage::notesDir();
+    const QString clean = QDir::cleanPath(relativePath);
+    if (clean == ".." || clean.startsWith("../")) return Storage::notesDir();
+    return QDir(Storage::notesDir()).absoluteFilePath(clean);
+}
+
+QString NotesModel::sanitizeName(const QString &name) const {
+    QString out = name.trimmed();
+    out.replace('/', '_');
+    out.replace('\\', '_');
+    if (out == "." || out == "..") out.clear();
+    return out;
+}
+
+void NotesModel::scanDirectory(const QString &absoluteDir, const QString &relativeDir,
+                               int depth, QVector<Entry> &target) const {
+    QDir dir(absoluteDir);
+    for (const QFileInfo &folder : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        const QString rel = relativeDir.isEmpty() ? folder.fileName() : relativeDir + "/" + folder.fileName();
+        target.push_back({folder.fileName(), rel, true, depth});
+        scanDirectory(folder.absoluteFilePath(), rel, depth + 1, target);
+    }
+    for (const QFileInfo &note : dir.entryInfoList({"*.md"}, QDir::Files | QDir::Readable, QDir::Name)) {
+        const QString rel = relativeDir.isEmpty() ? note.fileName() : relativeDir + "/" + note.fileName();
+        target.push_back({note.completeBaseName(), rel, false, depth});
+    }
+}
