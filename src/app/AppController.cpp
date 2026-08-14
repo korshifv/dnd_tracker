@@ -362,9 +362,9 @@ bool AppController::saveCharacterBasics(const QString &path, const QVariantMap &
     if (v.contains("spellSlots") || v.contains("expendedSlots")) {
         QJsonObject spells = data.value("spells").toObject();
         if (v.contains("spellSlots")) {
-            const QVariantList slots = v.value("spellSlots").toList();
-            for (int level = 1; level < slots.size() && level <= 9; ++level)
-                spells[QString("slots-%1").arg(level)] = wrapped(slots.at(level).toInt());
+            const QVariantList slotValues = v.value("spellSlots").toList();
+            for (int level = 1; level < slotValues.size() && level <= 9; ++level)
+                spells[QString("slots-%1").arg(level)] = wrapped(slotValues.at(level).toInt());
         }
         if (v.contains("expendedSlots")) {
             QJsonArray allLevels;
