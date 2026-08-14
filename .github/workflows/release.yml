@@ -99,7 +99,8 @@ jobs:
             curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
             7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
           done
-          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
+          find "$RUNNER_TEMP/Qt" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
 
       - name: Configure and build
         run: |
@@ -175,7 +176,9 @@ jobs:
           android_component="$QT_REPOSITORY/online/qtsdkrepository/all_os/android/qt6_683/qt6_683_arm64_v8a/qt.qt6.683.android_arm64_v8a/"
           install_component "$host_component" "$RUNNER_TEMP/qt-host"
           install_component "$android_component" "$RUNNER_TEMP/qt-android"
-          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
+          find "$RUNNER_TEMP/Qt" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
 
       - name: Configure and build APK
         run: |
