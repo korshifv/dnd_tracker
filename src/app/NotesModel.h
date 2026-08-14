@@ -23,6 +23,7 @@ public:
     Q_INVOKABLE bool createFolder(const QString &parentPath, const QString &name);
     Q_INVOKABLE bool renameAt(int row, const QString &newName);
     Q_INVOKABLE bool removeAt(int row);
+    Q_INVOKABLE QString pathByTitle(const QString &title) const;
 
 signals:
     void operationFailed(const QString &message);
