@@ -125,6 +125,41 @@ bool NotesModel::renameAt(int row, const QString &newName) {
     return true;
 }
 
+bool NotesModel::moveAt(int row, const QString &targetFolder) {
+    if (row < 0 || row >= m_entries.size()) return false;
+
+    const Entry entry = m_entries.at(row);
+    const QString sourcePath = QDir::cleanPath(absolutePath(entry.relativePath));
+    const QString targetDir = QDir::cleanPath(absolutePath(targetFolder));
+    if (!QFileInfo(targetDir).isDir()) {
+        emit operationFailed(tr("Папка назначения не существует"));
+        return false;
+    }
+
+    if (entry.isFolder) {
+        const QString prefix = sourcePath + QDir::separator();
+        if (targetDir == sourcePath || targetDir.startsWith(prefix)) {
+            emit operationFailed(tr("Нельзя переместить папку внутрь самой себя"));
+            return false;
+        }
+    }
+
+    const QString destination = QDir(targetDir).filePath(QFileInfo(sourcePath).fileName());
+    if (QDir::cleanPath(destination) == sourcePath)
+        return true;
+    if (QFileInfo::exists(destination)) {
+        emit operationFailed(tr("В папке назначения уже есть объект с таким именем"));
+        return false;
+    }
+    if (!QDir().rename(sourcePath, destination)) {
+        emit operationFailed(tr("Не удалось переместить %1").arg(entry.title));
+        return false;
+    }
+
+    refresh();
+    return true;
+}
+
 bool NotesModel::removeAt(int row) {
     if (row < 0 || row >= m_entries.size()) return false;
     const Entry entry = m_entries.at(row);
