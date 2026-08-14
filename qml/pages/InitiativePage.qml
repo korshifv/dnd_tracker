@@ -7,6 +7,17 @@ Item {
     id: page
     signal openCharacter(string filePath)
 
+    property var avatarPalette: [
+        "#e57373", "#ffb74d", "#ffd54f", "#81c784",
+        "#4dd0e1", "#64b5f6", "#9575cd", "#f06292"
+    ]
+
+    function nextAvatarColor(current) {
+        const normalized = String(current || "").toLowerCase()
+        const currentIndex = avatarPalette.indexOf(normalized)
+        return avatarPalette[(currentIndex + 1) % avatarPalette.length]
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
@@ -85,6 +96,18 @@ Item {
                             height: 34
                             radius: 17
                             color: avatarColor.length ? avatarColor : Theme.accent
+                            border.width: 1
+                            border.color: Theme.border
+                            ToolTip.visible: avatarMouse.containsMouse
+                            ToolTip.text: "Нажми, чтобы сменить цвет"
+
+                            MouseArea {
+                                id: avatarMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Initiative.setAvatarColor(index, page.nextAvatarColor(avatarColor))
+                            }
                         }
                         TextField {
                             Layout.fillWidth: true
