@@ -1,0 +1,222 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: '6.8.3'
+  QT_REPOSITORY: 'https://download.qt.io'
+
+jobs:
+  windows:
+    name: Package Windows x64
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install tools
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade aqtinstall
+          choco install ninja --no-progress -y
+
+      - name: Install Qt
+        shell: pwsh
+        run: |
+          aqt install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 `
+            --base "$env:QT_REPOSITORY/" `
+            --outputdir "$env:RUNNER_TEMP\Qt"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_TESTING=OFF `
+            -DCMAKE_PREFIX_PATH="$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64"
+          cmake --build build --parallel
+
+      - name: Install deployable tree
+        shell: pwsh
+        run: cmake --install build --prefix package
+
+      - name: Archive
+        shell: pwsh
+        run: Compress-Archive -Path package\* -DestinationPath dnd_tracker-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: dnd_tracker-windows-x64.zip
+          if-no-files-found: error
+
+  linux:
+    name: Package Linux x64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build p7zip-full curl \
+            libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Install Qt
+        run: |
+          set -euo pipefail
+          component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
+          work="$RUNNER_TEMP/qt-archives"
+          mkdir -p "$work" "$RUNNER_TEMP/Qt"
+          mapfile -t archives < <(
+            curl -fsSL "$component" \
+              | grep -oE 'href="[^"?]+\.7z"' \
+              | cut -d'"' -f2 \
+              | sort -u
+          )
+          if (( ${#archives[@]} == 0 )); then
+            echo "No Qt archives found at $component" >&2
+            exit 1
+          fi
+          for file in "${archives[@]}"; do
+            [[ "$file" == *meta.7z ]] && continue
+            archive="$work/$(basename "$file")"
+            curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
+            7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
+          done
+          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
+          cmake --build build --parallel
+
+      - name: Install deployable tree
+        run: cmake --install build --prefix package
+
+      - name: Archive
+        run: tar -C package -czf dnd_tracker-linux-x64.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          path: dnd_tracker-linux-x64.tar.gz
+          if-no-files-found: error
+
+  android:
+    name: Package Android ARM64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build p7zip-full curl
+
+      - name: Install Android SDK and NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platform-tools' \
+            'platforms;android-36' \
+            'build-tools;36.0.0' \
+            'ndk;27.2.12479018'
+
+      - name: Install Qt host and Android kits
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/Qt"
+          install_component() {
+            local component="$1"
+            local work="$2"
+            mkdir -p "$work"
+            mapfile -t archives < <(
+              curl -fsSL "$component" \
+                | grep -oE 'href="[^"?]+\.7z"' \
+                | cut -d'"' -f2 \
+                | sort -u
+            )
+            if (( ${#archives[@]} == 0 )); then
+              echo "No Qt archives found at $component" >&2
+              exit 1
+            fi
+            for file in "${archives[@]}"; do
+              [[ "$file" == *meta.7z ]] && continue
+              archive="$work/$(basename "$file")"
+              curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
+              7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
+            done
+          }
+          host_component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
+          android_component="$QT_REPOSITORY/online/qtsdkrepository/all_os/android/qt6_683/qt6_683_arm64_v8a/qt.qt6.683.android_arm64_v8a/"
+          install_component "$host_component" "$RUNNER_TEMP/qt-host"
+          install_component "$android_component" "$RUNNER_TEMP/qt-android"
+          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
+
+      - name: Configure and build APK
+        run: |
+          "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake" \
+            -S . -B build-android -G Ninja \
+            -DQT_HOST_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64" \
+            -DANDROID_SDK_ROOT="$ANDROID_HOME" \
+            -DANDROID_NDK_ROOT="$ANDROID_HOME/ndk/27.2.12479018" \
+            -DANDROID_ABI=arm64-v8a \
+            -DBUILD_TESTING=OFF
+          cmake --build build-android --target apk --parallel
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          apk="$(find build-android -type f -name '*.apk' | head -n 1)"
+          test -n "$apk"
+          cp "$apk" dnd_tracker-android-arm64.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android-arm64
+          path: dnd_tracker-android-arm64.apk
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [windows, linux, android]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
