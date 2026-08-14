@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <utility>
 
@@ -63,7 +64,10 @@ bool NotesModel::saveText(const QString &relativePath, const QString &text) {
 
 bool NotesModel::createNote(const QString &parentPath, const QString &name) {
     const QString safe = sanitizeName(name);
-    if (safe.isEmpty()) return false;
+    if (safe.isEmpty()) {
+        emit operationFailed(tr("Недопустимое имя заметки"));
+        return false;
+    }
     QString parent = absolutePath(parentPath);
     if (!QDir(parent).exists()) parent = Storage::notesDir();
     const QString path = QDir(parent).filePath(safe + ".md");
@@ -83,7 +87,10 @@ bool NotesModel::createNote(const QString &parentPath, const QString &name) {
 
 bool NotesModel::createFolder(const QString &parentPath, const QString &name) {
     const QString safe = sanitizeName(name);
-    if (safe.isEmpty()) return false;
+    if (safe.isEmpty()) {
+        emit operationFailed(tr("Недопустимое имя папки"));
+        return false;
+    }
     QString parent = absolutePath(parentPath);
     if (!QDir(parent).exists()) parent = Storage::notesDir();
     if (!QDir(parent).mkdir(safe)) {
@@ -97,11 +104,14 @@ bool NotesModel::createFolder(const QString &parentPath, const QString &name) {
 bool NotesModel::renameAt(int row, const QString &newName) {
     if (row < 0 || row >= m_entries.size()) return false;
     const QString safe = sanitizeName(newName);
-    if (safe.isEmpty()) return false;
+    if (safe.isEmpty()) {
+        emit operationFailed(tr("Недопустимое имя"));
+        return false;
+    }
     const Entry entry = m_entries.at(row);
     const QString oldPath = absolutePath(entry.relativePath);
     QFileInfo info(oldPath);
-    QString fileName = safe + (entry.isFolder ? QString() : QStringLiteral(".md"));
+    const QString fileName = safe + (entry.isFolder ? QString() : QStringLiteral(".md"));
     const QString newPath = info.dir().filePath(fileName);
     if (QFileInfo::exists(newPath)) {
         emit operationFailed(tr("Объект с таким именем уже существует"));
@@ -128,19 +138,38 @@ bool NotesModel::removeAt(int row) {
     return true;
 }
 
+QString NotesModel::pathByTitle(const QString &title) const {
+    const QString wanted = title.trimmed();
+    if (wanted.isEmpty()) return {};
+    for (const Entry &entry : m_entries) {
+        if (!entry.isFolder && entry.title.compare(wanted, Qt::CaseInsensitive) == 0)
+            return entry.relativePath;
+    }
+    return {};
+}
+
 QString NotesModel::absolutePath(const QString &relativePath) const {
     if (relativePath.isEmpty()) return Storage::notesDir();
     const QString clean = QDir::cleanPath(relativePath);
-    if (clean == ".." || clean.startsWith("../")) return Storage::notesDir();
+    if (QDir::isAbsolutePath(clean) || clean == ".." || clean.startsWith("../"))
+        return Storage::notesDir();
     return QDir(Storage::notesDir()).absoluteFilePath(clean);
 }
 
 QString NotesModel::sanitizeName(const QString &name) const {
     QString out = name.trimmed();
-    out.replace('/', '_');
-    out.replace('\\', '_');
-    if (out == "." || out == "..") out.clear();
-    return out;
+    out.replace(QRegularExpression(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])")), QStringLiteral("_"));
+    while (out.endsWith('.') || out.endsWith(' '))
+        out.chop(1);
+    if (out == "." || out == "..")
+        return {};
+
+    static const QRegularExpression reserved(
+        QStringLiteral(R"(^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$)"),
+        QRegularExpression::CaseInsensitiveOption);
+    if (reserved.match(out).hasMatch())
+        out.prepend('_');
+    return out.trimmed();
 }
 
 void NotesModel::scanDirectory(const QString &absoluteDir, const QString &relativeDir,
