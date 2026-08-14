@@ -69,7 +69,7 @@ Item {
                 required property bool activeTurn
 
                 width: ListView.view.width
-                implicitHeight: width < 700 ? 230 : 138
+                implicitHeight: width < 700 ? 280 : 148
                 border.width: activeTurn ? 2 : 1
                 border.color: activeTurn ? Theme.accent : Theme.border
 
@@ -81,7 +81,9 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         Rectangle {
-                            width: 34; height: 34; radius: 17
+                            width: 34
+                            height: 34
+                            radius: 17
                             color: avatarColor.length ? avatarColor : Theme.accent
                         }
                         TextField {
@@ -92,8 +94,26 @@ Item {
                             onEditingFinished: Initiative.setName(index, text)
                             background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
                         }
-                        Label { visible: parent.width > 620; text: groupName || "Основная группа"; color: Theme.textMuted }
+                        TextField {
+                            Layout.preferredWidth: 150
+                            visible: parent.width > 560
+                            text: groupName || "Основная группа"
+                            placeholderText: "Группа"
+                            color: Theme.textMuted
+                            onEditingFinished: Initiative.setGroup(index, text)
+                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
+                        }
                         AppButton { text: "×"; danger: true; implicitWidth: 46; onClicked: Initiative.removeAt(index) }
+                    }
+
+                    TextField {
+                        Layout.fillWidth: true
+                        visible: parent.width <= 560
+                        text: groupName || "Основная группа"
+                        placeholderText: "Группа"
+                        color: Theme.textMuted
+                        onEditingFinished: Initiative.setGroup(index, text)
+                        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
                     }
 
                     Flow {
@@ -101,27 +121,65 @@ Item {
                         spacing: 8
 
                         RowLayout {
-                            width: 122; height: 44
-                            Label { text: "HP " + hp; color: Theme.text; font.weight: Font.Bold }
-                            AppButton { text: "−"; implicitWidth: 42; onClicked: Initiative.applyDamage(index, 1) }
-                            AppButton { text: "+"; implicitWidth: 42; onClicked: Initiative.applyHeal(index, 1) }
+                            width: 260
+                            height: 44
+                            Label {
+                                text: "HP " + hp
+                                color: Theme.text
+                                font.weight: Font.Bold
+                                Layout.preferredWidth: 62
+                            }
+                            SpinBox {
+                                id: effectAmount
+                                from: 1
+                                to: 999
+                                value: 1
+                                editable: true
+                                Layout.preferredWidth: 82
+                            }
+                            AppButton {
+                                text: "−"
+                                danger: true
+                                implicitWidth: 46
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Урон"
+                                onClicked: Initiative.applyDamage(index, effectAmount.value)
+                            }
+                            AppButton {
+                                text: "+"
+                                implicitWidth: 46
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Лечение"
+                                onClicked: Initiative.applyHeal(index, effectAmount.value)
+                            }
                         }
 
                         Label {
-                            width: 78; height: 44
+                            width: 78
+                            height: 44
                             text: armorClass > 0 ? "КД " + armorClass : "КД —"
                             color: Theme.text
                             verticalAlignment: Text.AlignVCenter
                         }
 
-                        SpinBox {
-                            width: 120; height: 44
-                            from: -20; to: 99; value: initiative; editable: true
-                            onValueModified: Initiative.setInitiative(index, value)
+                        ColumnLayout {
+                            width: 120
+                            height: 44
+                            spacing: 1
+                            Label { text: "Инициатива"; color: Theme.textMuted; font.pixelSize: 10 }
+                            SpinBox {
+                                Layout.fillWidth: true
+                                from: -20
+                                to: 99
+                                value: initiative
+                                editable: true
+                                onValueModified: Initiative.setInitiative(index, value)
+                            }
                         }
 
                         TextField {
-                            width: Math.max(180, parent.width - 360); height: 44
+                            width: Math.max(180, parent.width - 490)
+                            height: 44
                             text: status
                             placeholderText: "Статусы…"
                             color: Theme.text
