@@ -26,18 +26,32 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            ninja-build p7zip-full wget \
+            ninja-build p7zip-full curl \
             libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
 
       - name: Install Qt from official component archives
         run: |
-          set -euxo pipefail
-          mkdir -p "$RUNNER_TEMP/qt-archives" "$RUNNER_TEMP/Qt"
+          set -euo pipefail
           component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
-          wget -r -l1 -np -nd -A '*.7z' "$component" -P "$RUNNER_TEMP/qt-archives"
-          for archive in "$RUNNER_TEMP"/qt-archives/*.7z; do
-            case "$archive" in *meta.7z) continue ;; esac
-            7z x -y "$archive" -o"$RUNNER_TEMP/Qt"
+          work="$RUNNER_TEMP/qt-archives"
+          mkdir -p "$work" "$RUNNER_TEMP/Qt"
+
+          mapfile -t archives < <(
+            curl -fsSL "$component" \
+              | grep -oE 'href="[^"?]+\.7z"' \
+              | cut -d'"' -f2 \
+              | sort -u
+          )
+          if (( ${#archives[@]} == 0 )); then
+            echo "No Qt archives found at $component" >&2
+            exit 1
+          fi
+
+          for file in "${archives[@]}"; do
+            [[ "$file" == *meta.7z ]] && continue
+            archive="$work/$(basename "$file")"
+            curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
+            7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
           done
           test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
 
@@ -92,7 +106,10 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        shell: pwsh
+        run: |
+          $env:Path = "$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:Path"
+          ctest --test-dir build --output-on-failure
 
   android:
     name: Android ARM64
@@ -108,7 +125,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build p7zip-full wget
+          sudo apt-get install -y ninja-build p7zip-full curl
 
       - name: Install Android SDK and NDK
         run: |
@@ -121,22 +138,35 @@ jobs:
 
       - name: Install Qt host and Android kits from official archives
         run: |
-          set -euxo pipefail
-          mkdir -p "$RUNNER_TEMP/qt-host" "$RUNNER_TEMP/qt-android" "$RUNNER_TEMP/Qt"
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/Qt"
+
+          install_component() {
+            local component="$1"
+            local work="$2"
+            mkdir -p "$work"
+            mapfile -t archives < <(
+              curl -fsSL "$component" \
+                | grep -oE 'href="[^"?]+\.7z"' \
+                | cut -d'"' -f2 \
+                | sort -u
+            )
+            if (( ${#archives[@]} == 0 )); then
+              echo "No Qt archives found at $component" >&2
+              exit 1
+            fi
+            for file in "${archives[@]}"; do
+              [[ "$file" == *meta.7z ]] && continue
+              archive="$work/$(basename "$file")"
+              curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
+              7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
+            done
+          }
 
           host_component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
-          wget -r -l1 -np -nd -A '*.7z' "$host_component" -P "$RUNNER_TEMP/qt-host"
-          for archive in "$RUNNER_TEMP"/qt-host/*.7z; do
-            case "$archive" in *meta.7z) continue ;; esac
-            7z x -y "$archive" -o"$RUNNER_TEMP/Qt"
-          done
-
           android_component="$QT_REPOSITORY/online/qtsdkrepository/all_os/android/qt6_683/qt6_683_arm64_v8a/qt.qt6.683.android_arm64_v8a/"
-          wget -r -l1 -np -nd -A '*.7z' "$android_component" -P "$RUNNER_TEMP/qt-android"
-          for archive in "$RUNNER_TEMP"/qt-android/*.7z; do
-            case "$archive" in *meta.7z) continue ;; esac
-            7z x -y "$archive" -o"$RUNNER_TEMP/Qt"
-          done
+          install_component "$host_component" "$RUNNER_TEMP/qt-host"
+          install_component "$android_component" "$RUNNER_TEMP/qt-android"
 
           test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
           test -x "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
