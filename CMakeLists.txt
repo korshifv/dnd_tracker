@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(dnd_tracker VERSION 2.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
+include(CTest)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -84,6 +85,25 @@ if(ANDROID)
         QT_ANDROID_VERSION_CODE 20000
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
     )
+endif()
+
+if(BUILD_TESTING AND NOT ANDROID)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
+    qt_add_executable(dnd_tracker_tests
+        tests/CoreTests.cpp
+        src/core/CharacterDocument.cpp
+        src/core/CharacterDocument.h
+        src/core/JsonUtils.cpp
+        src/core/JsonUtils.h
+    )
+    target_include_directories(dnd_tracker_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    )
+    target_link_libraries(dnd_tracker_tests PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+    add_test(NAME core-regressions COMMAND dnd_tracker_tests)
 endif()
 
 install(TARGETS dnd_tracker
