@@ -129,23 +129,26 @@ bool NotesModel::moveAt(int row, const QString &targetFolder) {
     if (row < 0 || row >= m_entries.size()) return false;
 
     const Entry entry = m_entries.at(row);
-    const QString sourcePath = QDir::cleanPath(absolutePath(entry.relativePath));
-    const QString targetDir = QDir::cleanPath(absolutePath(targetFolder));
+    const QString sourcePath = QDir::fromNativeSeparators(
+        QDir::cleanPath(absolutePath(entry.relativePath)));
+    const QString targetDir = QDir::fromNativeSeparators(
+        QDir::cleanPath(absolutePath(targetFolder)));
     if (!QFileInfo(targetDir).isDir()) {
         emit operationFailed(tr("Папка назначения не существует"));
         return false;
     }
 
     if (entry.isFolder) {
-        const QString prefix = sourcePath + QDir::separator();
+        const QString prefix = sourcePath + '/';
         if (targetDir == sourcePath || targetDir.startsWith(prefix)) {
             emit operationFailed(tr("Нельзя переместить папку внутрь самой себя"));
             return false;
         }
     }
 
-    const QString destination = QDir(targetDir).filePath(QFileInfo(sourcePath).fileName());
-    if (QDir::cleanPath(destination) == sourcePath)
+    const QString destination = QDir::fromNativeSeparators(
+        QDir::cleanPath(QDir(targetDir).filePath(QFileInfo(sourcePath).fileName())));
+    if (destination == sourcePath)
         return true;
     if (QFileInfo::exists(destination)) {
         emit operationFailed(tr("В папке назначения уже есть объект с таким именем"));
