@@ -103,6 +103,15 @@ jobs:
           find "$qt_root" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
           test -e "$qt_root/bin/qt-cmake"
 
+          icu_file="$(find "$qt_root" \( -type f -o -type l \) -name 'libicui18n.so.73' -print -quit)"
+          if [[ -z "$icu_file" ]]; then
+            echo "Bundled ICU 73 was not found under $qt_root" >&2
+            find "$qt_root" -maxdepth 5 -name 'libicu*.so*' -print >&2 || true
+            exit 1
+          fi
+          icu_lib="$(dirname "$icu_file")"
+          echo "LD_LIBRARY_PATH=$icu_lib:$qt_root/lib" >> "$GITHUB_ENV"
+
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja \
@@ -183,6 +192,15 @@ jobs:
           install_component "$android_component" "$RUNNER_TEMP/qt-android" "$android_root"
           test -e "$host_root/bin/qt-cmake"
           test -e "$android_root/bin/qt-cmake"
+
+          icu_file="$(find "$host_root" \( -type f -o -type l \) -name 'libicui18n.so.73' -print -quit)"
+          if [[ -z "$icu_file" ]]; then
+            echo "Bundled ICU 73 was not found under $host_root" >&2
+            find "$host_root" -maxdepth 5 -name 'libicu*.so*' -print >&2 || true
+            exit 1
+          fi
+          icu_lib="$(dirname "$icu_file")"
+          echo "LD_LIBRARY_PATH=$icu_lib:$host_root/lib" >> "$GITHUB_ENV"
 
       - name: Configure and build APK
         run: |
