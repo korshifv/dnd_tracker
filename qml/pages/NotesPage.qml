@@ -57,7 +57,7 @@ Item {
                         width: ListView.view.width
                         height: 42
                         radius: Theme.radiusSmall
-                        color: mouse.containsMouse ? Theme.surfaceHover : "transparent"
+                        color: hover.hovered ? Theme.surfaceHover : "transparent"
 
                         RowLayout {
                             anchors.fill: parent
@@ -65,10 +65,10 @@ Item {
                             anchors.rightMargin: 6
                             Label { text: isFolder ? "▸" : "•"; color: isFolder ? Theme.accent : Theme.textMuted }
                             Label { text: title; color: Theme.text; Layout.fillWidth: true; elide: Text.ElideRight }
-                            AppButton { text: "×"; danger: true; implicitWidth: 42; visible: mouse.containsMouse; onClicked: { removeDialog.row = index; removeDialog.open() } }
+                            AppButton { text: "×"; danger: true; implicitWidth: 42; visible: hover.hovered; onClicked: { removeDialog.row = index; removeDialog.open() } }
                         }
 
-                        HoverHandler { id: mouse }
+                        HoverHandler { id: hover }
                         TapHandler {
                             onTapped: {
                                 if (isFolder) page.selectedFolder = relativePath
