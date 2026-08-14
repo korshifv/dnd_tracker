@@ -85,7 +85,7 @@ ApplicationWindow {
                     currentIndex: window.section
                     InitiativePage { onOpenCharacter: path => window.showCharacter(path) }
                     CharactersPage { onOpenCharacter: path => window.showCharacter(path) }
-                    NotesPage {}
+                    NotesPage { onOpenCharacter: path => window.showCharacter(path) }
                 }
             }
         }
