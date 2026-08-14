@@ -1,76 +1,93 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 
-project(dnd_tracker VERSION 1.2.0 LANGUAGES CXX)
+project(dnd_tracker VERSION 2.0.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
-
-# Enable automatic Qt features
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
-
-# Source files
-set(PROJECT_SOURCES
-    src/main.cpp
-    src/core/CharacterDocument.cpp
-    src/core/JsonUtils.cpp
-    src/ui/MainWindow.cpp
-    src/ui/InitiativeTracker.cpp
-    src/ui/CharacterRepository.cpp
-    src/ui/TrackerColumn.cpp
-    src/ui/CharacterCard.cpp
-    src/ui/CharacterSheet.cpp
-    src/ui/NoteEditor.cpp
-    src/ui/NoteRepository.cpp
-    src/ui/MarkdownHighlighter.cpp
+find_package(Qt6 6.8 REQUIRED COMPONENTS
+    Core
+    Gui
+    Qml
+    Quick
+    QuickControls2
 )
 
-# Headers for IDEs
-set(PROJECT_HEADERS
+qt_standard_project_setup(REQUIRES 6.8)
+
+set_source_files_properties(qml/Theme.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+)
+
+qt_add_executable(dnd_tracker
+    src/main.cpp
+
+    src/core/CharacterDocument.cpp
     src/core/CharacterDocument.h
+    src/core/JsonUtils.cpp
+    src/core/JsonUtils.h
     src/core/Storage.h
     src/core/FileUtils.h
-    src/core/JsonUtils.h
-    src/ui/MainWindow.h
-    src/ui/InitiativeTracker.h
-    src/ui/CharacterRepository.h
-    src/ui/TrackerColumn.h
-    src/ui/CharacterCard.h
-    src/ui/CharacterSheet.h
-    src/ui/NoteEditor.h
-    src/ui/NoteRepository.h
-    src/ui/MarkdownHighlighter.h
-    src/ui/TouchUtils.h
-    src/ui/MobileTheme.h
+
+    src/app/AppController.cpp
+    src/app/AppController.h
+    src/app/CharacterRepositoryModel.cpp
+    src/app/CharacterRepositoryModel.h
+    src/app/InitiativeModel.cpp
+    src/app/InitiativeModel.h
+    src/app/NotesModel.cpp
+    src/app/NotesModel.h
 )
 
-# Cross-platform Qt executable (handles Android APK packaging automatically)
-qt_add_executable(dnd_tracker ${PROJECT_SOURCES} ${PROJECT_HEADERS})
+qt_add_qml_module(dnd_tracker
+    URI DndTracker
+    VERSION 1.0
+    QML_FILES
+        qml/Main.qml
+        qml/Theme.qml
+        qml/components/AppButton.qml
+        qml/components/LabeledField.qml
+        qml/components/Surface.qml
+        qml/pages/InitiativePage.qml
+        qml/pages/CharactersPage.qml
+        qml/pages/CharacterSheetPage.qml
+        qml/pages/NotesPage.qml
+)
 
-# Include directories so #include "Storage.h" or #include "MainWindow.h" resolves everywhere
 target_include_directories(dnd_tracker PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 
-# Target linking
-target_link_libraries(dnd_tracker PRIVATE 
-    Qt6::Widgets 
-    Qt6::Core 
+target_link_libraries(dnd_tracker PRIVATE
+    Qt6::Core
     Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
 )
 
-# Windows specific: remove console window for release builds
 if(WIN32)
-    set_target_properties(dnd_tracker PROPERTIES WIN32_EXECUTABLE ON)
+    set_target_properties(dnd_tracker PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 
-# Installation
+if(ANDROID)
+    set_target_properties(dnd_tracker PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
+        QT_ANDROID_MIN_SDK_VERSION 28
+        QT_ANDROID_TARGET_SDK_VERSION 36
+        QT_ANDROID_SDK_BUILD_TOOLS_REVISION "35.0.0"
+        QT_ANDROID_PACKAGE_NAME "org.dnd_tracker.app"
+        QT_ANDROID_VERSION_CODE 20000
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+    )
+endif()
+
 install(TARGETS dnd_tracker
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
