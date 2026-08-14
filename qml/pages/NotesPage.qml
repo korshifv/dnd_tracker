@@ -40,6 +40,23 @@ Item {
             page.openCharacter(characterPath)
     }
 
+    function moveEntry(sourceIndex, sourcePath, sourceTitle, sourceIsFolder, targetFolder) {
+        if (page.currentPath.length)
+            Notes.saveText(page.currentPath, editor.text)
+        const containsCurrent = page.currentPath === sourcePath
+                || (sourceIsFolder && page.currentPath.startsWith(sourcePath + "/"))
+        if (!Notes.moveAt(sourceIndex, targetFolder))
+            return
+
+        if (containsCurrent && page.currentTitle.length) {
+            const movedPath = Notes.pathByTitle(page.currentTitle)
+            if (movedPath.length)
+                page.currentPath = movedPath
+        }
+        if (page.selectedFolder === sourcePath || page.selectedFolder.startsWith(sourcePath + "/"))
+            page.selectedFolder = ""
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
@@ -69,75 +86,138 @@ Item {
                 SplitView.minimumWidth: 220
                 SplitView.minimumHeight: 160
 
-                ListView {
-                    id: tree
+                ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 8
-                    clip: true
-                    model: Notes
-                    spacing: 3
-                    ScrollBar.vertical: ScrollBar {}
+                    spacing: 4
 
-                    delegate: Rectangle {
-                        id: row
-                        required property int index
-                        required property string title
-                        required property string relativePath
-                        required property bool isFolder
-                        required property int depth
-                        width: ListView.view.width
-                        height: 44
+                    Rectangle {
+                        id: rootDrop
+                        Layout.fillWidth: true
+                        implicitHeight: 34
                         radius: Theme.radiusSmall
-                        color: page.currentPath === relativePath || page.selectedFolder === relativePath
-                               ? Theme.surfaceHover
-                               : (hover.hovered ? Theme.surfaceHover : "transparent")
+                        color: rootDropArea.containsDrag ? Theme.surfaceHover : "transparent"
+                        border.width: rootDropArea.containsDrag ? 1 : 0
+                        border.color: Theme.accent
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 8 + depth * 14
-                            anchors.rightMargin: 4
-                            spacing: 4
-                            Label {
-                                text: isFolder ? "▸" : "•"
-                                color: isFolder ? Theme.accent : Theme.textMuted
-                            }
-                            Label {
-                                text: title
-                                color: Theme.text
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-                            AppButton {
-                                text: "✎"
-                                implicitWidth: 38
-                                onClicked: {
-                                    renameDialog.row = index
-                                    renameDialog.oldPath = relativePath
-                                    renameDialog.oldTitle = title
-                                    renameDialog.folder = isFolder
-                                    renameName.text = title
-                                    renameDialog.open()
-                                }
-                            }
-                            AppButton {
-                                text: "×"
-                                danger: true
-                                implicitWidth: 38
-                                onClicked: {
-                                    removeDialog.row = index
-                                    removeDialog.path = relativePath
-                                    removeDialog.open()
-                                }
-                            }
+                        Label {
+                            anchors.centerIn: parent
+                            text: "⌂ Корень заметок"
+                            color: rootDropArea.containsDrag ? Theme.accentStrong : Theme.textMuted
+                            font.pixelSize: 11
                         }
 
-                        HoverHandler { id: hover }
-                        TapHandler {
-                            onTapped: {
-                                if (isFolder)
-                                    page.selectedFolder = relativePath
-                                else
-                                    page.openNote(relativePath, title)
+                        TapHandler { onTapped: page.selectedFolder = "" }
+                        DropArea {
+                            id: rootDropArea
+                            anchors.fill: parent
+                            onDropped: function(drop) {
+                                const source = drop.source
+                                if (!source) return
+                                page.moveEntry(source.sourceIndex, source.sourcePath,
+                                               source.sourceTitle, source.sourceIsFolder, "")
+                                drop.acceptProposedAction()
+                            }
+                        }
+                    }
+
+                    ListView {
+                        id: tree
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        model: Notes
+                        spacing: 3
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: Rectangle {
+                            id: row
+                            required property int index
+                            required property string title
+                            required property string relativePath
+                            required property bool isFolder
+                            required property int depth
+                            property int sourceIndex: index
+                            property string sourcePath: relativePath
+                            property string sourceTitle: title
+                            property bool sourceIsFolder: isFolder
+
+                            width: ListView.view.width
+                            height: 44
+                            radius: Theme.radiusSmall
+                            color: folderDrop.containsDrag
+                                   ? Theme.surfaceHover
+                                   : (page.currentPath === relativePath || page.selectedFolder === relativePath
+                                      ? Theme.surfaceHover
+                                      : (hover.hovered ? Theme.surfaceHover : "transparent"))
+                            border.width: folderDrop.containsDrag ? 1 : 0
+                            border.color: Theme.accent
+
+                            Drag.active: dragHandler.active
+                            Drag.source: row
+                            Drag.supportedActions: Qt.MoveAction
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8 + depth * 14
+                                anchors.rightMargin: 4
+                                spacing: 4
+                                Label {
+                                    text: isFolder ? "▸" : "•"
+                                    color: isFolder ? Theme.accent : Theme.textMuted
+                                }
+                                Label {
+                                    text: title
+                                    color: Theme.text
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                                AppButton {
+                                    text: "✎"
+                                    implicitWidth: 38
+                                    onClicked: {
+                                        renameDialog.row = index
+                                        renameDialog.oldPath = relativePath
+                                        renameDialog.oldTitle = title
+                                        renameDialog.folder = isFolder
+                                        renameName.text = title
+                                        renameDialog.open()
+                                    }
+                                }
+                                AppButton {
+                                    text: "×"
+                                    danger: true
+                                    implicitWidth: 38
+                                    onClicked: {
+                                        removeDialog.row = index
+                                        removeDialog.path = relativePath
+                                        removeDialog.open()
+                                    }
+                                }
+                            }
+
+                            HoverHandler { id: hover }
+                            DragHandler { id: dragHandler; target: null }
+                            TapHandler {
+                                onTapped: {
+                                    if (isFolder)
+                                        page.selectedFolder = relativePath
+                                    else
+                                        page.openNote(relativePath, title)
+                                }
+                            }
+                            DropArea {
+                                id: folderDrop
+                                anchors.fill: parent
+                                enabled: row.isFolder && !dragHandler.active
+                                onDropped: function(drop) {
+                                    const source = drop.source
+                                    if (!source || source === row) return
+                                    page.moveEntry(source.sourceIndex, source.sourcePath,
+                                                   source.sourceTitle, source.sourceIsFolder,
+                                                   row.relativePath)
+                                    drop.acceptProposedAction()
+                                }
                             }
                         }
                     }
