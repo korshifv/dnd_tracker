@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           package="org.dnd_tracker.app"
-          android:versionCode="1"
-          android:versionName="1.0">
+          android:versionCode="-- %%INSERT_VERSION_CODE%% --"
+          android:versionName="-- %%INSERT_VERSION_NAME%% --"
+          android:installLocation="auto">
 
-    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
+    <!-- %%INSERT_PERMISSIONS -->
+    <!-- %%INSERT_FEATURES -->
 
     <supports-screens
         android:largeScreens="true"
@@ -17,16 +19,17 @@
         android:label="DnD Tracker"
         android:hardwareAccelerated="true"
         android:allowBackup="true"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:extractNativeLibs="true">
 
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"
-            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation"
+            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density"
             android:label="DnD Tracker"
             android:launchMode="singleTop"
             android:screenOrientation="unspecified"
             android:exported="true">
-            
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -34,7 +37,13 @@
 
             <meta-data
                 android:name="android.app.lib_name"
-                android:value="dnd_tracker" />
+                android:value="-- %%INSERT_APP_LIB_NAME%% --" />
+            <meta-data
+                android:name="android.app.arguments"
+                android:value="-- %%INSERT_APP_ARGUMENTS%% --" />
+            <meta-data
+                android:name="android.app.extract_android_style"
+                android:value="minimal" />
         </activity>
     </application>
 </manifest>
