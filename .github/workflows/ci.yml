@@ -53,7 +53,8 @@ jobs:
             curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
             7z x -y "$archive" -o"$RUNNER_TEMP/Qt" >/dev/null
           done
-          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
+          find "$RUNNER_TEMP/Qt" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
 
       - name: Configure
         run: |
@@ -66,6 +67,9 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Package smoke test
+        run: cmake --install build --prefix "$RUNNER_TEMP/package"
 
   windows:
     name: Windows x64
@@ -110,6 +114,10 @@ jobs:
         run: |
           $env:Path = "$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:Path"
           ctest --test-dir build --output-on-failure
+
+      - name: Package smoke test
+        shell: pwsh
+        run: cmake --install build --prefix "$env:RUNNER_TEMP\package"
 
   android:
     name: Android ARM64
@@ -168,8 +176,9 @@ jobs:
           install_component "$host_component" "$RUNNER_TEMP/qt-host"
           install_component "$android_component" "$RUNNER_TEMP/qt-android"
 
-          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
-          test -x "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
+          find "$RUNNER_TEMP/Qt" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64/bin/qt-cmake"
+          test -f "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake"
 
       - name: Configure
         run: |
