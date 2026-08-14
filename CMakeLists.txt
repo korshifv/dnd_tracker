@@ -111,3 +111,12 @@ install(TARGETS dnd_tracker
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+if(NOT ANDROID)
+    qt_generate_deploy_qml_app_script(
+        TARGET dnd_tracker
+        OUTPUT_SCRIPT deploy_script
+        NO_UNSUPPORTED_PLATFORM_ERROR
+    )
+    install(SCRIPT ${deploy_script})
+endif()
