@@ -106,7 +106,9 @@ AppController::AppController(CharacterRepositoryModel *characters,
 
 bool AppController::importCharacter(const QUrl &url) {
     clearError();
-    const QString sourcePath = url.toLocalFile();
+    const QString sourcePath = url.isLocalFile()
+        ? url.toLocalFile()
+        : url.toString(QUrl::FullyEncoded);
     QFile source(sourcePath);
     if (sourcePath.isEmpty() || !source.open(QIODevice::ReadOnly)) {
         setError(tr("Не удалось открыть выбранный файл"));
@@ -119,7 +121,11 @@ bool AppController::importCharacter(const QUrl &url) {
         return false;
     }
 
-    QString fileName = QFileInfo(sourcePath).fileName();
+    QString fileName = url.fileName();
+    if (fileName.isEmpty())
+        fileName = QFileInfo(sourcePath).fileName();
+    if (fileName.isEmpty())
+        fileName = "character.json";
     if (!fileName.endsWith(".json", Qt::CaseInsensitive))
         fileName += ".json";
     const QString destination = uniqueDestinationPath(fileName);
