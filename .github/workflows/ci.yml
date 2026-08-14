@@ -2,16 +2,13 @@ name: Cross-platform CI
 
 on:
   push:
-    branches:
-      - main
-      - 'fix/**'
-      - 'feature/**'
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 env:
-  QT_VERSION: '6.11.1'
+  QT_VERSION: '6.8.3'
 
 jobs:
   linux:
@@ -88,7 +85,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
       - uses: actions/setup-python@v5
         with:
