@@ -9,6 +9,7 @@ on:
 
 env:
   QT_VERSION: '6.8.3'
+  QT_REPOSITORY: 'https://download.qt.io/'
 
 jobs:
   linux:
@@ -29,7 +30,9 @@ jobs:
 
       - name: Install Qt
         run: |
-          aqt install-qt linux desktop "$QT_VERSION" gcc_64 --outputdir "$RUNNER_TEMP/Qt"
+          aqt install-qt linux desktop "$QT_VERSION" gcc_64 \
+            --base "$QT_REPOSITORY" \
+            --outputdir "$RUNNER_TEMP/Qt"
 
       - name: Configure
         run: |
@@ -59,7 +62,9 @@ jobs:
       - name: Install Qt
         shell: pwsh
         run: |
-          aqt install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 --outputdir "$env:RUNNER_TEMP\Qt"
+          aqt install-qt windows desktop $env:QT_VERSION win64_msvc2022_64 `
+            --base $env:QT_REPOSITORY `
+            --outputdir "$env:RUNNER_TEMP\Qt"
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -108,8 +113,12 @@ jobs:
 
       - name: Install Qt host and Android kits
         run: |
-          aqt install-qt linux desktop "$QT_VERSION" gcc_64 --outputdir "$RUNNER_TEMP/Qt"
-          aqt install-qt linux android "$QT_VERSION" android_arm64_v8a --outputdir "$RUNNER_TEMP/Qt"
+          aqt install-qt linux desktop "$QT_VERSION" gcc_64 \
+            --base "$QT_REPOSITORY" \
+            --outputdir "$RUNNER_TEMP/Qt"
+          aqt install-qt linux android "$QT_VERSION" android_arm64_v8a \
+            --base "$QT_REPOSITORY" \
+            --outputdir "$RUNNER_TEMP/Qt"
 
       - name: Configure
         run: |
