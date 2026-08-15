@@ -3,6 +3,7 @@
 
 #include <QJsonParseError>
 #include <QSaveFile>
+#include <cmath>
 
 CharacterDocument::CharacterDocument(QObject *parent) : QObject(parent) {}
 
@@ -107,7 +108,10 @@ void CharacterDocument::setHpTemp(int hpTemp) {
 }
 
 int CharacterDocument::getInitiative() const {
-    return JsonUtils::safeGetInt(m_characterData, {"vitality", "initiative"});
+    // Initiative is the Dexterity modifier. Do not trust stale imported
+    // vitality.initiative values: character sheets already contain DEX.
+    const int dexterity = JsonUtils::safeGetInt(m_characterData, {"stats", "dex", "score"}, 10);
+    return static_cast<int>(std::floor((dexterity - 10) / 2.0));
 }
 
 void CharacterDocument::setInitiative(int init) {

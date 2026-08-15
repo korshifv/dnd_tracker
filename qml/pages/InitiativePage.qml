@@ -8,13 +8,19 @@ Item {
     signal openCharacter(string filePath)
 
     property var avatarPalette: [
-        "#e57373", "#ffb74d", "#ffd54f", "#81c784",
-        "#4dd0e1", "#64b5f6", "#9575cd", "#f06292"
+        Theme.red, Theme.peach, Theme.yellow, Theme.green,
+        Theme.teal, Theme.blue, Theme.mauve, Theme.pink
     ]
 
     function nextAvatarColor(current) {
         const normalized = String(current || "").toLowerCase()
-        const currentIndex = avatarPalette.indexOf(normalized)
+        let currentIndex = -1
+        for (let i = 0; i < avatarPalette.length; ++i) {
+            if (String(avatarPalette[i]).toLowerCase() === normalized) {
+                currentIndex = i
+                break
+            }
+        }
         return avatarPalette[(currentIndex + 1) % avatarPalette.length]
     }
 
@@ -25,35 +31,56 @@ Item {
 
         Surface {
             Layout.fillWidth: true
-            implicitHeight: 88
-            RowLayout {
+            implicitHeight: combatHeader.implicitHeight + 28
+
+            ColumnLayout {
+                id: combatHeader
                 anchors.fill: parent
                 anchors.margins: 14
                 spacing: 10
-                ColumnLayout {
+
+                RowLayout {
                     Layout.fillWidth: true
-                    Label {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        text: Initiative.currentTurnName.length
-                              ? "Сейчас ходит: " + Initiative.currentTurnName
-                              : "Бой не начат"
-                        color: Theme.text
-                        font.pixelSize: 18
-                        font.weight: Font.Bold
-                        elide: Text.ElideRight
+                        spacing: 2
+                        Label {
+                            Layout.fillWidth: true
+                            text: Initiative.currentTurnName.length
+                                  ? "Сейчас ходит: " + Initiative.currentTurnName
+                                  : "Бой не начат"
+                            color: Theme.text
+                            font.pixelSize: 18
+                            font.weight: Font.Bold
+                            elide: Text.ElideRight
+                        }
+                        Label { text: "Раунд " + Initiative.round; color: Theme.textMuted }
                     }
-                    Label { text: "Раунд " + Initiative.round; color: Theme.textMuted }
                 }
-                AppButton { text: "Следующий"; primary: true; enabled: Initiative.hasCombatants; onClicked: Initiative.nextTurn() }
-                AppButton { text: "Сброс"; onClicked: Initiative.resetCombat() }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    AppButton {
+                        Layout.fillWidth: true
+                        text: "Следующий"
+                        primary: true
+                        enabled: Initiative.hasCombatants
+                        onClicked: Initiative.nextTurn()
+                    }
+                    AppButton {
+                        Layout.fillWidth: true
+                        text: "Сброс"
+                        onClicked: Initiative.resetCombat()
+                    }
+                }
             }
         }
 
-        RowLayout {
+        Flow {
             Layout.fillWidth: true
+            spacing: 8
             AppButton { text: "+ Боец"; primary: true; onClicked: Initiative.addBlank("") }
             AppButton { text: "Сортировать"; onClicked: Initiative.sortByInitiative() }
-            Item { Layout.fillWidth: true }
             AppButton { text: "Очистить"; danger: true; enabled: Initiative.hasCombatants; onClicked: confirmClear.open() }
         }
 
@@ -68,6 +95,7 @@ Item {
             ScrollBar.vertical: ScrollBar {}
 
             delegate: Surface {
+                id: card
                 required property int index
                 required property string name
                 required property int hp
@@ -78,34 +106,184 @@ Item {
                 required property string groupName
                 required property string avatarColor
                 required property bool activeTurn
+                property bool compactCard: width < 620
 
                 width: ListView.view.width
-                implicitHeight: width < 700 ? 280 : 148
+                implicitHeight: compactCard ? compactLayout.implicitHeight + 24 : wideLayout.implicitHeight + 24
                 border.width: activeTurn ? 2 : 1
                 border.color: activeTurn ? Theme.accent : Theme.border
 
                 ColumnLayout {
+                    id: compactLayout
                     anchors.fill: parent
                     anchors.margins: 12
                     spacing: 9
+                    visible: card.compactCard
 
                     RowLayout {
                         Layout.fillWidth: true
                         Rectangle {
-                            width: 34
-                            height: 34
-                            radius: 17
+                            width: 38
+                            height: 38
+                            radius: 19
                             color: avatarColor.length ? avatarColor : Theme.accent
                             border.width: 1
                             border.color: Theme.border
-                            ToolTip.visible: avatarMouse.containsMouse
+                            ToolTip.visible: avatarMouseCompact.containsMouse
                             ToolTip.text: "Нажми, чтобы сменить цвет"
-
                             MouseArea {
-                                id: avatarMouse
+                                id: avatarMouseCompact
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Initiative.setAvatarColor(index, page.nextAvatarColor(avatarColor))
+                            }
+                        }
+                        TextField {
+                            Layout.fillWidth: true
+                            text: name
+                            color: Theme.text
+                            font.weight: Font.DemiBold
+                            selectByMouse: true
+                            onEditingFinished: Initiative.setName(index, text)
+                            background: Rectangle {
+                                color: Theme.surfaceRaised
+                                radius: Theme.radiusSmall
+                                border.color: activeFocus ? Theme.accent : Theme.border
+                                border.width: activeFocus ? 2 : 1
+                            }
+                        }
+                        AppButton { text: "×"; danger: true; implicitWidth: 44; onClicked: Initiative.removeAt(index) }
+                    }
+
+                    TextField {
+                        Layout.fillWidth: true
+                        text: groupName || "Основная группа"
+                        placeholderText: "Группа"
+                        color: Theme.text
+                        selectByMouse: true
+                        onEditingFinished: Initiative.setGroup(index, text)
+                        background: Rectangle {
+                            color: Theme.surfaceRaised
+                            radius: Theme.radiusSmall
+                            border.color: activeFocus ? Theme.accent : Theme.border
+                            border.width: activeFocus ? 2 : 1
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Label {
+                            text: "HP " + hp
+                            color: Theme.text
+                            font.weight: Font.Bold
+                            Layout.preferredWidth: 54
+                        }
+                        NumberSpinBox {
+                            id: compactEffectAmount
+                            Layout.fillWidth: true
+                            from: 1
+                            to: 999
+                            value: 1
+                        }
+                        AppButton {
+                            text: "−"
+                            danger: true
+                            implicitWidth: 46
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Урон"
+                            onClicked: Initiative.applyDamage(index, compactEffectAmount.value)
+                        }
+                        AppButton {
+                            text: "+"
+                            implicitWidth: 46
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Лечение"
+                            onClicked: Initiative.applyHeal(index, compactEffectAmount.value)
+                        }
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 10
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Label { text: "КД"; color: Theme.textMuted; font.pixelSize: 11 }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: Theme.touchTarget
+                                radius: Theme.radiusSmall
+                                color: Theme.surfaceRaised
+                                border.width: 1
+                                border.color: Theme.border
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: armorClass > 0 ? armorClass : "—"
+                                    color: Theme.text
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Label { text: "Инициатива"; color: Theme.textMuted; font.pixelSize: 11 }
+                            NumberSpinBox {
+                                Layout.fillWidth: true
+                                from: -20
+                                to: 99
+                                value: initiative
+                                onValueChanged: if (value !== initiative) Initiative.setInitiative(index, value)
+                            }
+                        }
+                    }
+
+                    TextField {
+                        Layout.fillWidth: true
+                        text: status
+                        placeholderText: "Статусы…"
+                        color: Theme.text
+                        selectByMouse: true
+                        onEditingFinished: Initiative.setStatus(index, text)
+                        background: Rectangle {
+                            color: Theme.surfaceRaised
+                            radius: Theme.radiusSmall
+                            border.color: activeFocus ? Theme.accent : Theme.border
+                            border.width: activeFocus ? 2 : 1
+                        }
+                    }
+
+                    AppButton {
+                        Layout.fillWidth: true
+                        visible: filePath.length > 0
+                        text: "Открыть чарник"
+                        onClicked: page.openCharacter(filePath)
+                    }
+                }
+
+                ColumnLayout {
+                    id: wideLayout
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 9
+                    visible: !card.compactCard
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Rectangle {
+                            width: 38
+                            height: 38
+                            radius: 19
+                            color: avatarColor.length ? avatarColor : Theme.accent
+                            border.width: 1
+                            border.color: Theme.border
+                            ToolTip.visible: avatarMouseWide.containsMouse
+                            ToolTip.text: "Нажми, чтобы сменить цвет"
+                            MouseArea {
+                                id: avatarMouseWide
+                                anchors.fill: parent
+                                hoverEnabled: true
                                 onClicked: Initiative.setAvatarColor(index, page.nextAvatarColor(avatarColor))
                             }
                         }
@@ -115,101 +293,47 @@ Item {
                             color: Theme.text
                             font.weight: Font.DemiBold
                             onEditingFinished: Initiative.setName(index, text)
-                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
+                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: activeFocus ? Theme.accent : Theme.border; border.width: activeFocus ? 2 : 1 }
                         }
                         TextField {
-                            Layout.preferredWidth: 150
-                            visible: parent.width > 560
+                            Layout.preferredWidth: 180
                             text: groupName || "Основная группа"
                             placeholderText: "Группа"
-                            color: Theme.textMuted
+                            color: Theme.text
                             onEditingFinished: Initiative.setGroup(index, text)
-                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
+                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: activeFocus ? Theme.accent : Theme.border; border.width: activeFocus ? 2 : 1 }
                         }
-                        AppButton { text: "×"; danger: true; implicitWidth: 46; onClicked: Initiative.removeAt(index) }
+                        AppButton { text: "×"; danger: true; implicitWidth: 44; onClicked: Initiative.removeAt(index) }
                     }
 
-                    TextField {
-                        Layout.fillWidth: true
-                        visible: parent.width <= 560
-                        text: groupName || "Основная группа"
-                        placeholderText: "Группа"
-                        color: Theme.textMuted
-                        onEditingFinished: Initiative.setGroup(index, text)
-                        background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
-                    }
-
-                    Flow {
+                    RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
-
-                        RowLayout {
-                            width: 260
-                            height: 44
-                            Label {
-                                text: "HP " + hp
-                                color: Theme.text
-                                font.weight: Font.Bold
-                                Layout.preferredWidth: 62
-                            }
-                            SpinBox {
-                                id: effectAmount
-                                from: 1
-                                to: 999
-                                value: 1
-                                editable: true
-                                Layout.preferredWidth: 82
-                            }
-                            AppButton {
-                                text: "−"
-                                danger: true
-                                implicitWidth: 46
-                                ToolTip.visible: hovered
-                                ToolTip.text: "Урон"
-                                onClicked: Initiative.applyDamage(index, effectAmount.value)
-                            }
-                            AppButton {
-                                text: "+"
-                                implicitWidth: 46
-                                ToolTip.visible: hovered
-                                ToolTip.text: "Лечение"
-                                onClicked: Initiative.applyHeal(index, effectAmount.value)
-                            }
-                        }
-
-                        Label {
-                            width: 78
-                            height: 44
-                            text: armorClass > 0 ? "КД " + armorClass : "КД —"
-                            color: Theme.text
-                            verticalAlignment: Text.AlignVCenter
-                        }
-
+                        Label { text: "HP " + hp; color: Theme.text; font.weight: Font.Bold }
+                        NumberSpinBox { id: wideEffectAmount; Layout.preferredWidth: 100; from: 1; to: 999; value: 1 }
+                        AppButton { text: "−"; danger: true; implicitWidth: 44; onClicked: Initiative.applyDamage(index, wideEffectAmount.value) }
+                        AppButton { text: "+"; implicitWidth: 44; onClicked: Initiative.applyHeal(index, wideEffectAmount.value) }
+                        Label { text: armorClass > 0 ? "КД " + armorClass : "КД —"; color: Theme.text; Layout.preferredWidth: 74 }
                         ColumnLayout {
-                            width: 120
-                            height: 44
+                            Layout.preferredWidth: 120
                             spacing: 1
                             Label { text: "Инициатива"; color: Theme.textMuted; font.pixelSize: 10 }
-                            SpinBox {
+                            NumberSpinBox {
                                 Layout.fillWidth: true
                                 from: -20
                                 to: 99
                                 value: initiative
-                                editable: true
-                                onValueModified: Initiative.setInitiative(index, value)
+                                onValueChanged: if (value !== initiative) Initiative.setInitiative(index, value)
                             }
                         }
-
                         TextField {
-                            width: Math.max(180, parent.width - 490)
-                            height: 44
+                            Layout.fillWidth: true
                             text: status
                             placeholderText: "Статусы…"
                             color: Theme.text
                             onEditingFinished: Initiative.setStatus(index, text)
-                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: Theme.border; border.width: 1 }
+                            background: Rectangle { color: Theme.surfaceRaised; radius: Theme.radiusSmall; border.color: activeFocus ? Theme.accent : Theme.border; border.width: activeFocus ? 2 : 1 }
                         }
-
                         AppButton {
                             visible: filePath.length > 0
                             text: "Чарник"

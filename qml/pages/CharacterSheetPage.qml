@@ -16,8 +16,10 @@ Item {
     property var expendedSlots: [[],[],[],[],[],[],[],[],[],[]]
     property var spellTexts: ["","","","","","","","","",""]
     property string spellAbility: "int"
+    property int currentTab: 0
     signal backRequested()
 
+    readonly property var tabNames: ["Основное", "Навыки", "Описание", "Оружие", "Магия"]
     readonly property var statCodes: ["str", "dex", "con", "int", "wis", "cha"]
     readonly property var statNames: ["СИЛ", "ЛОВ", "ТЕЛ", "ИНТ", "МУД", "ХАР"]
     readonly property var abilityCodes: ["none", "str", "dex", "con", "int", "wis", "cha"]
@@ -148,7 +150,7 @@ Item {
             hpMax: hpMaxSpin.value,
             hpTemp: hpTempSpin.value,
             armorClass: acSpin.value,
-            initiative: initSpin.value,
+            initiative: page.statModifier("dex"),
             speed: speedField.text,
             hitDie: hitDieField.text,
             str: strSpin.value,
@@ -196,7 +198,8 @@ Item {
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 10
-                spacing: 10
+                spacing: 8
+
                 AppButton {
                     text: "← Назад"
                     onClicked: {
@@ -212,27 +215,73 @@ Item {
                     font.weight: Font.Bold
                     elide: Text.ElideRight
                 }
-                Label { id: saveState; color: Theme.success; opacity: 0 }
-                AppButton { text: "Сохранить"; primary: true; onClicked: page.save() }
+                Label {
+                    id: saveState
+                    visible: opacity > 0
+                    color: Theme.success
+                    opacity: 0
+                }
+                AppButton {
+                    text: "Сохранить"
+                    primary: true
+                    onClicked: page.save()
+                }
             }
         }
 
-        TabBar {
-            id: sheetTabs
+        Rectangle {
             Layout.fillWidth: true
-            currentIndex: 0
-            background: Rectangle { color: Theme.surface }
-            TabButton { text: "Основное" }
-            TabButton { text: "Навыки" }
-            TabButton { text: "Описание" }
-            TabButton { text: "Оружие" }
-            TabButton { text: "Магия" }
+            implicitHeight: 52
+            color: Theme.surface
+
+            Flickable {
+                anchors.fill: parent
+                contentWidth: tabRow.implicitWidth
+                contentHeight: height
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
+                clip: true
+
+                Row {
+                    id: tabRow
+                    height: parent.height
+                    Repeater {
+                        model: page.tabNames
+                        Button {
+                            required property string modelData
+                            required property int index
+                            width: Math.max(104, implicitContentWidth + 28)
+                            height: 52
+                            text: modelData
+                            onClicked: page.currentTab = index
+
+                            contentItem: Label {
+                                text: parent.text
+                                color: page.currentTab === index ? Theme.accentStrong : Theme.textMuted
+                                font.weight: page.currentTab === index ? Font.DemiBold : Font.Normal
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            background: Item {
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+                                    height: 3
+                                    color: Theme.accent
+                                    visible: page.currentTab === index
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: sheetTabs.currentIndex
+            currentIndex: page.currentTab
 
             Flickable {
                 id: basicsFlick
@@ -247,109 +296,188 @@ Item {
                     width: basicsFlick.width
                     spacing: 14
 
-                    GridLayout {
+                    Surface {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
                         Layout.topMargin: 16
-                        columns: basicsFlick.width < 760 ? 1 : 2
-                        columnSpacing: 14
-                        rowSpacing: 14
+                        implicitHeight: identityLayout.implicitHeight + 28
 
-                        Surface {
-                            Layout.fillWidth: true
-                            implicitHeight: identityLayout.implicitHeight + 28
-                            ColumnLayout {
-                                id: identityLayout
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
-                                Label { text: "ПЕРСОНАЖ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold }
-                                GridLayout {
+                        ColumnLayout {
+                            id: identityLayout
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 10
+
+                            Label {
+                                text: "ПЕРСОНАЖ"
+                                color: Theme.text
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: basicsFlick.width < 620 ? 1 : 2
+                                columnSpacing: 10
+                                rowSpacing: 8
+
+                                LabeledField { id: nameField; Layout.fillWidth: true; label: "ИМЯ"; text: page.details.name || "" }
+                                LabeledField { id: playerField; Layout.fillWidth: true; label: "ИГРОК"; text: page.details.playerName || "" }
+                                LabeledField { id: classField; Layout.fillWidth: true; label: "КЛАСС"; text: page.details.charClass || "" }
+                                LabeledField { id: subclassField; Layout.fillWidth: true; label: "ПОДКЛАСС"; text: page.details.subclass || "" }
+                                LabeledField { id: raceField; Layout.fillWidth: true; label: "РАСА"; text: page.details.race || "" }
+                                LabeledField { id: backgroundField; Layout.fillWidth: true; label: "ПРЕДЫСТОРИЯ"; text: page.details.background || "" }
+                                LabeledField { id: alignmentField; Layout.fillWidth: true; label: "МИРОВОЗЗРЕНИЕ"; text: page.details.alignment || "" }
+                                LabeledField { id: experienceField; Layout.fillWidth: true; label: "ОПЫТ"; text: page.details.experience || "" }
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: 10
+
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    columns: basicsFlick.width < 560 ? 1 : 2
-                                    columnSpacing: 10
-                                    rowSpacing: 8
-                                    LabeledField { id: nameField; Layout.fillWidth: true; label: "ИМЯ"; text: page.details.name || "" }
-                                    LabeledField { id: playerField; Layout.fillWidth: true; label: "ИГРОК"; text: page.details.playerName || "" }
-                                    LabeledField { id: classField; Layout.fillWidth: true; label: "КЛАСС"; text: page.details.charClass || "" }
-                                    LabeledField { id: subclassField; Layout.fillWidth: true; label: "ПОДКЛАСС"; text: page.details.subclass || "" }
-                                    LabeledField { id: raceField; Layout.fillWidth: true; label: "РАСА"; text: page.details.race || "" }
-                                    LabeledField { id: backgroundField; Layout.fillWidth: true; label: "ПРЕДЫСТОРИЯ"; text: page.details.background || "" }
-                                    LabeledField { id: alignmentField; Layout.fillWidth: true; label: "МИРОВОЗЗРЕНИЕ"; text: page.details.alignment || "" }
-                                    LabeledField { id: experienceField; Layout.fillWidth: true; label: "ОПЫТ"; text: page.details.experience || "" }
+                                    Label { text: "УРОВЕНЬ"; color: Theme.textMuted; font.pixelSize: 11 }
+                                    NumberSpinBox { id: levelSpin; Layout.fillWidth: true; from: 1; to: 40; value: page.details.level || 1 }
                                 }
-                                RowLayout {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Label { text: "УРОВЕНЬ"; color: Theme.textMuted; font.pixelSize: 11 }
-                                        SpinBox { id: levelSpin; Layout.fillWidth: true; from: 1; to: 40; editable: true; value: page.details.level || 1 }
-                                    }
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Label { text: "МАСТЕРСТВО"; color: Theme.textMuted; font.pixelSize: 11 }
-                                        SpinBox { id: proficiencySpin; Layout.fillWidth: true; from: 0; to: 12; editable: true; value: page.details.proficiency || 2 }
-                                    }
-                                }
-                                CheckBox {
-                                    id: inspirationCheck
-                                    text: "Вдохновение"
-                                    checked: page.details.inspiration || false
+                                    Label { text: "МАСТЕРСТВО"; color: Theme.textMuted; font.pixelSize: 11 }
+                                    NumberSpinBox { id: proficiencySpin; Layout.fillWidth: true; from: 0; to: 12; value: page.details.proficiency || 2 }
                                 }
                             }
-                        }
 
-                        Surface {
-                            Layout.fillWidth: true
-                            implicitHeight: combatLayout.implicitHeight + 28
-                            ColumnLayout {
-                                id: combatLayout
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
-                                Label { text: "БОЙ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold }
-                                GridLayout {
+                            CheckBox {
+                                id: inspirationCheck
+                                text: "Вдохновение"
+                                checked: page.details.inspiration || false
+                            }
+                        }
+                    }
+
+                    Surface {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 16
+                        Layout.rightMargin: 16
+                        implicitHeight: combatLayout.implicitHeight + 28
+
+                        ColumnLayout {
+                            id: combatLayout
+                            anchors.fill: parent
+                            anchors.margins: 14
+                            spacing: 12
+
+                            Label {
+                                text: "БОЙ"
+                                color: Theme.text
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: basicsFlick.width < 560 ? 2 : 3
+                                columnSpacing: 10
+                                rowSpacing: 10
+
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    columns: 3
-                                    columnSpacing: 8
-                                    rowSpacing: 8
                                     Label { text: "HP"; color: Theme.textMuted }
+                                    NumberSpinBox { id: hpSpin; Layout.fillWidth: true; from: -999; to: 9999; value: page.details.hp || 0 }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "MAX"; color: Theme.textMuted }
+                                    NumberSpinBox { id: hpMaxSpin; Layout.fillWidth: true; from: 0; to: 9999; value: page.details.hpMax || 0 }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "TEMP"; color: Theme.textMuted }
-                                    SpinBox { id: hpSpin; Layout.fillWidth: true; from: -999; to: 9999; editable: true; value: page.details.hp || 0 }
-                                    SpinBox { id: hpMaxSpin; Layout.fillWidth: true; from: 0; to: 9999; editable: true; value: page.details.hpMax || 0 }
-                                    SpinBox { id: hpTempSpin; Layout.fillWidth: true; from: 0; to: 9999; editable: true; value: page.details.hpTemp || 0 }
+                                    NumberSpinBox { id: hpTempSpin; Layout.fillWidth: true; from: 0; to: 9999; value: page.details.hpTemp || 0 }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "КД"; color: Theme.textMuted }
-                                    Label { text: "ИНИЦ."; color: Theme.textMuted }
-                                    Label { text: "СКОРОСТЬ"; color: Theme.textMuted }
-                                    SpinBox { id: acSpin; Layout.fillWidth: true; from: 0; to: 99; editable: true; value: page.details.armorClass || 0 }
-                                    SpinBox { id: initSpin; Layout.fillWidth: true; from: -20; to: 99; editable: true; value: page.details.initiative || 0 }
-                                    LabeledField { id: speedField; Layout.fillWidth: true; label: ""; text: page.details.speed || "" }
+                                    NumberSpinBox { id: acSpin; Layout.fillWidth: true; from: 0; to: 99; value: page.details.armorClass || 0 }
                                 }
-                                LabeledField { id: hitDieField; Layout.fillWidth: true; label: "КОСТЬ ХИТОВ"; text: page.details.hitDie || "" }
-                                Label { text: "СПАСБРОСКИ ОТ СМЕРТИ"; color: Theme.textMuted; font.pixelSize: 11 }
-                                RowLayout {
-                                    Label { text: "Успех"; color: Theme.success }
-                                    Repeater {
-                                        model: 3
-                                        CheckBox {
-                                            required property int index
-                                            checked: !!page.deathSuccess[index]
-                                            onToggled: page.setDeath("success", index, checked)
-                                        }
-                                    }
-                                    Item { Layout.preferredWidth: 12 }
-                                    Label { text: "Провал"; color: Theme.danger }
-                                    Repeater {
-                                        model: 3
-                                        CheckBox {
-                                            required property int index
-                                            checked: !!page.deathFail[index]
-                                            onToggled: page.setDeath("fail", index, checked)
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Label { text: "ИНИЦИАТИВА"; color: Theme.textMuted }
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: Theme.touchTarget
+                                        radius: Theme.radiusSmall
+                                        color: Theme.surfaceRaised
+                                        border.width: 1
+                                        border.color: Theme.border
+                                        Label {
+                                            anchors.centerIn: parent
+                                            text: page.signed(page.statModifier("dex"))
+                                            color: Theme.accentStrong
+                                            font.pixelSize: 17
+                                            font.weight: Font.DemiBold
                                         }
                                     }
                                 }
+                                LabeledField {
+                                    id: speedField
+                                    Layout.fillWidth: true
+                                    label: "СКОРОСТЬ"
+                                    text: page.details.speed || ""
+                                }
+                            }
+
+                            LabeledField {
+                                id: hitDieField
+                                Layout.fillWidth: true
+                                label: "КОСТЬ ХИТОВ"
+                                text: page.details.hitDie || ""
+                            }
+
+                            Label {
+                                text: "СПАСБРОСКИ ОТ СМЕРТИ"
+                                color: Theme.textMuted
+                                font.pixelSize: 11
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Успех"
+                                    color: Theme.success
+                                    Layout.preferredWidth: 70
+                                }
+                                Repeater {
+                                    model: 3
+                                    SquareCheckBox {
+                                        required property int index
+                                        fillColor: Theme.success
+                                        checked: !!page.deathSuccess[index]
+                                        onToggled: page.setDeath("success", index, checked)
+                                    }
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "Провал"
+                                    color: Theme.danger
+                                    Layout.preferredWidth: 70
+                                }
+                                Repeater {
+                                    model: 3
+                                    SquareCheckBox {
+                                        required property int index
+                                        fillColor: Theme.danger
+                                        checked: !!page.deathFail[index]
+                                        onToggled: page.setDeath("fail", index, checked)
+                                    }
+                                }
+                                Item { Layout.fillWidth: true }
                             }
                         }
                     }
@@ -359,50 +487,66 @@ Item {
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
                         implicitHeight: statsLayout.implicitHeight + 28
+
                         ColumnLayout {
                             id: statsLayout
                             anchors.fill: parent
                             anchors.margins: 14
                             spacing: 10
-                            Label { text: "ХАРАКТЕРИСТИКИ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold }
+
+                            Label {
+                                text: "ХАРАКТЕРИСТИКИ"
+                                color: Theme.text
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                            }
+
                             GridLayout {
                                 Layout.fillWidth: true
-                                columns: basicsFlick.width < 620 ? 2 : 6
-                                columnSpacing: 8
-                                rowSpacing: 8
+                                columns: basicsFlick.width < 540 ? 2 : (basicsFlick.width < 900 ? 3 : 6)
+                                columnSpacing: 10
+                                rowSpacing: 12
+
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "СИЛ"; color: Theme.textMuted }
-                                    SpinBox { id: strSpin; from: 1; to: 30; editable: true; value: page.details.str || 10 }
+                                    NumberSpinBox { id: strSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.str || 10 }
                                     Label { text: page.signed(page.statModifier("str")); color: Theme.accentStrong }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "ЛОВ"; color: Theme.textMuted }
-                                    SpinBox { id: dexSpin; from: 1; to: 30; editable: true; value: page.details.dex || 10 }
+                                    NumberSpinBox { id: dexSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.dex || 10 }
                                     Label { text: page.signed(page.statModifier("dex")); color: Theme.accentStrong }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "ТЕЛ"; color: Theme.textMuted }
-                                    SpinBox { id: conSpin; from: 1; to: 30; editable: true; value: page.details.con || 10 }
+                                    NumberSpinBox { id: conSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.con || 10 }
                                     Label { text: page.signed(page.statModifier("con")); color: Theme.accentStrong }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "ИНТ"; color: Theme.textMuted }
-                                    SpinBox { id: intSpin; from: 1; to: 30; editable: true; value: page.details.int || 10 }
+                                    NumberSpinBox { id: intSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.int || 10 }
                                     Label { text: page.signed(page.statModifier("int")); color: Theme.accentStrong }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "МУД"; color: Theme.textMuted }
-                                    SpinBox { id: wisSpin; from: 1; to: 30; editable: true; value: page.details.wis || 10 }
+                                    NumberSpinBox { id: wisSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.wis || 10 }
                                     Label { text: page.signed(page.statModifier("wis")); color: Theme.accentStrong }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "ХАР"; color: Theme.textMuted }
-                                    SpinBox { id: chaSpin; from: 1; to: 30; editable: true; value: page.details.cha || 10 }
+                                    NumberSpinBox { id: chaSpin; Layout.fillWidth: true; from: 1; to: 30; value: page.details.cha || 10 }
                                     Label { text: page.signed(page.statModifier("cha")); color: Theme.accentStrong }
                                 }
                             }
                         }
                     }
+
                     Item { Layout.preferredHeight: 16 }
                 }
             }
@@ -412,24 +556,33 @@ Item {
                 contentWidth: width
                 contentHeight: skillsContent.implicitHeight + 32
                 clip: true
+                boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
 
                 ColumnLayout {
                     id: skillsContent
                     width: skillsFlick.width
                     spacing: 14
+
                     Surface {
                         Layout.fillWidth: true
-                        Layout.margins: 16
+                        Layout.leftMargin: 16
+                        Layout.rightMargin: 16
+                        Layout.topMargin: 16
                         implicitHeight: savesLayout.implicitHeight + 28
+
                         ColumnLayout {
                             id: savesLayout
                             anchors.fill: parent
                             anchors.margins: 14
+                            spacing: 10
+
                             Label { text: "СПАСБРОСКИ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold }
                             GridLayout {
                                 Layout.fillWidth: true
                                 columns: skillsFlick.width < 620 ? 2 : 3
+                                columnSpacing: 8
+                                rowSpacing: 6
                                 Repeater {
                                     model: 6
                                     CheckBox {
@@ -452,15 +605,28 @@ Item {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        implicitHeight: skillList.implicitHeight + 72
+                        implicitHeight: skillList.implicitHeight + 74
+
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 14
+                            spacing: 8
+
                             RowLayout {
                                 Layout.fillWidth: true
                                 Label { text: "НАВЫКИ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold; Layout.fillWidth: true }
-                                Label { text: "Пассивное восприятие: " + page.passivePerception(); color: Theme.accentStrong }
+                                Label {
+                                    visible: skillsFlick.width >= 500
+                                    text: "Пассивное восприятие: " + page.passivePerception()
+                                    color: Theme.accentStrong
+                                }
                             }
+                            Label {
+                                visible: skillsFlick.width < 500
+                                text: "Пассивное восприятие: " + page.passivePerception()
+                                color: Theme.accentStrong
+                            }
+
                             ColumnLayout {
                                 id: skillList
                                 Layout.fillWidth: true
@@ -470,6 +636,8 @@ Item {
                                         required property var modelData
                                         required property int index
                                         Layout.fillWidth: true
+                                        spacing: 6
+
                                         AppButton {
                                             text: modelData.profLevel === 2 ? "◎" : (modelData.profLevel === 1 ? "●" : "○")
                                             implicitWidth: 46
@@ -484,6 +652,7 @@ Item {
                             Label { text: "○ нет · ● владение · ◎ экспертиза"; color: Theme.textMuted; font.pixelSize: 11 }
                         }
                     }
+
                     Item { Layout.preferredHeight: 16 }
                 }
             }
@@ -493,6 +662,7 @@ Item {
                 contentWidth: width
                 contentHeight: textContent.implicitHeight + 32
                 clip: true
+                boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
 
                 ColumnLayout {
@@ -502,7 +672,9 @@ Item {
 
                     GridLayout {
                         Layout.fillWidth: true
-                        Layout.margins: 16
+                        Layout.leftMargin: 16
+                        Layout.rightMargin: 16
+                        Layout.topMargin: 16
                         columns: textFlick.width < 760 ? 1 : 2
                         columnSpacing: 14
                         rowSpacing: 14
@@ -514,7 +686,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 12
                                 Label { text: "ЧЕРТЫ ХАРАКТЕРА"; color: Theme.textMuted }
-                                TextArea { id: personalityEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.personality || ""; wrapMode: TextArea.Wrap }
+                                AppTextArea { id: personalityEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.personality || "" }
                             }
                         }
                         Surface {
@@ -524,7 +696,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 12
                                 Label { text: "ИДЕАЛЫ"; color: Theme.textMuted }
-                                TextArea { id: idealsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.ideals || ""; wrapMode: TextArea.Wrap }
+                                AppTextArea { id: idealsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.ideals || "" }
                             }
                         }
                         Surface {
@@ -534,7 +706,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 12
                                 Label { text: "ПРИВЯЗАННОСТИ"; color: Theme.textMuted }
-                                TextArea { id: bondsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.bonds || ""; wrapMode: TextArea.Wrap }
+                                AppTextArea { id: bondsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.bonds || "" }
                             }
                         }
                         Surface {
@@ -544,7 +716,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 12
                                 Label { text: "СЛАБОСТИ"; color: Theme.textMuted }
-                                TextArea { id: flawsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.flaws || ""; wrapMode: TextArea.Wrap }
+                                AppTextArea { id: flawsEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.flaws || "" }
                             }
                         }
                     }
@@ -558,7 +730,7 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 12
                             Label { text: "УМЕНИЯ И ОСОБЕННОСТИ"; color: Theme.textMuted }
-                            TextArea { id: featuresEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.features || ""; wrapMode: TextArea.Wrap }
+                            AppTextArea { id: featuresEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.features || "" }
                         }
                     }
                     Surface {
@@ -570,9 +742,10 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 12
                             Label { text: "СНАРЯЖЕНИЕ"; color: Theme.textMuted }
-                            TextArea { id: equipmentEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.equipment || ""; wrapMode: TextArea.Wrap }
+                            AppTextArea { id: equipmentEdit; Layout.fillWidth: true; Layout.fillHeight: true; text: page.details.equipment || "" }
                         }
                     }
+
                     Item { Layout.preferredHeight: 16 }
                 }
             }
@@ -582,11 +755,13 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 16
                     spacing: 12
+
                     RowLayout {
                         Layout.fillWidth: true
                         Label { text: "АТАКИ И ОРУЖИЕ"; color: Theme.text; font.pixelSize: 20; font.weight: Font.Bold; Layout.fillWidth: true }
                         AppButton { text: "+ Оружие"; primary: true; onClicked: weaponDialog.openNew() }
                     }
+
                     ListView {
                         id: weaponList
                         Layout.fillWidth: true
@@ -594,36 +769,69 @@ Item {
                         model: page.weapons
                         spacing: 8
                         clip: true
+                        boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar {}
+
                         delegate: Surface {
                             required property var modelData
                             required property int index
                             width: ListView.view.width
-                            implicitHeight: 92
-                            RowLayout {
+                            implicitHeight: 112
+
+                            ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: 12
-                                spacing: 12
-                                ColumnLayout {
+                                spacing: 6
+
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Label { text: modelData.name || "Оружие"; color: Theme.text; font.pixelSize: 17; font.weight: Font.Bold }
-                                    Label { text: modelData.damage || "Урон не указан"; color: Theme.textMuted }
+                                    Label {
+                                        text: modelData.name || "Оружие"
+                                        color: Theme.text
+                                        font.pixelSize: 17
+                                        font.weight: Font.Bold
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        text: "Попадание " + page.signed(page.weaponHit(modelData))
+                                        color: Theme.accentStrong
+                                        font.weight: Font.DemiBold
+                                    }
+                                    AppButton {
+                                        text: "×"
+                                        danger: true
+                                        implicitWidth: 42
+                                        onClicked: {
+                                            let copy = page.clone(page.weapons)
+                                            copy.splice(index, 1)
+                                            page.weapons = copy
+                                        }
+                                    }
                                 }
-                                Label { text: "Попадание " + page.signed(page.weaponHit(modelData)); color: Theme.accentStrong; font.weight: Font.DemiBold }
-                                AppButton { text: "Изменить"; onClicked: weaponDialog.openExisting(index, modelData) }
-                                AppButton {
-                                    text: "×"
-                                    danger: true
-                                    implicitWidth: 44
-                                    onClicked: {
-                                        let copy = page.clone(page.weapons)
-                                        copy.splice(index, 1)
-                                        page.weapons = copy
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Label {
+                                        text: modelData.damage || "Урон не указан"
+                                        color: Theme.textMuted
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                    }
+                                    AppButton {
+                                        text: "Изменить"
+                                        onClicked: weaponDialog.openExisting(index, modelData)
                                     }
                                 }
                             }
                         }
-                        Label { anchors.centerIn: parent; visible: weaponList.count === 0; text: "Оружия пока нет"; color: Theme.textMuted }
+
+                        Label {
+                            anchors.centerIn: parent
+                            visible: weaponList.count === 0
+                            text: "Оружия пока нет"
+                            color: Theme.textMuted
+                        }
                     }
                 }
             }
@@ -633,25 +841,37 @@ Item {
                 contentWidth: width
                 contentHeight: magicContent.implicitHeight + 32
                 clip: true
+                boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
 
                 ColumnLayout {
                     id: magicContent
                     width: magicFlick.width
                     spacing: 14
+
                     Surface {
                         Layout.fillWidth: true
-                        Layout.margins: 16
+                        Layout.leftMargin: 16
+                        Layout.rightMargin: 16
+                        Layout.topMargin: 16
                         implicitHeight: magicHeader.implicitHeight + 28
+
                         ColumnLayout {
                             id: magicHeader
                             anchors.fill: parent
                             anchors.margins: 14
+                            spacing: 10
+
                             Label { text: "МАГИЯ"; color: Theme.text; font.pixelSize: 18; font.weight: Font.Bold }
+
                             GridLayout {
                                 Layout.fillWidth: true
-                                columns: magicFlick.width < 700 ? 1 : 4
+                                columns: magicFlick.width < 700 ? 1 : 2
+                                columnSpacing: 12
+                                rowSpacing: 10
+
                                 LabeledField { id: casterField; Layout.fillWidth: true; label: "КЛАСС ЗАКЛИНАТЕЛЯ"; text: page.details.casterClass || "" }
+
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Label { text: "ХАРАКТЕРИСТИКА"; color: Theme.textMuted; font.pixelSize: 11 }
@@ -663,11 +883,14 @@ Item {
                                         onActivated: page.spellAbility = page.casterAbilityCodes[currentIndex]
                                     }
                                 }
+
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "СЛ СПАСБРОСКА"; color: Theme.textMuted; font.pixelSize: 11 }
                                     Label { text: 8 + proficiencySpin.value + page.spellModifier(); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold }
                                 }
                                 ColumnLayout {
+                                    Layout.fillWidth: true
                                     Label { text: "БОНУС АТАКИ"; color: Theme.textMuted; font.pixelSize: 11 }
                                     Label { text: page.signed(proficiencySpin.value + page.spellModifier()); color: Theme.accentStrong; font.pixelSize: 24; font.weight: Font.Bold }
                                 }
@@ -682,6 +905,7 @@ Item {
                         columns: magicFlick.width < 840 ? 1 : 2
                         columnSpacing: 12
                         rowSpacing: 12
+
                         Repeater {
                             model: 10
                             Surface {
@@ -689,29 +913,40 @@ Item {
                                 property int level: index
                                 Layout.fillWidth: true
                                 implicitHeight: 250
+
                                 ColumnLayout {
                                     anchors.fill: parent
                                     anchors.margins: 12
                                     spacing: 8
+
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Label { text: level === 0 ? "ЗАГОВОРЫ" : "УРОВЕНЬ " + level; color: Theme.text; font.weight: Font.Bold; Layout.fillWidth: true }
+                                        Label {
+                                            text: level === 0 ? "ЗАГОВОРЫ" : "УРОВЕНЬ " + level
+                                            color: Theme.text
+                                            font.weight: Font.Bold
+                                            Layout.fillWidth: true
+                                        }
                                         Label { visible: level > 0; text: "Ячейки"; color: Theme.textMuted }
-                                        SpinBox {
+                                        NumberSpinBox {
                                             visible: level > 0
-                                            from: 0; to: 20; editable: true
+                                            Layout.preferredWidth: 116
+                                            from: 0
+                                            to: 20
                                             value: page.spellSlots[level] || 0
-                                            onValueModified: page.setSpellSlots(level, value)
+                                            onValueChanged: if (level > 0 && value !== (page.spellSlots[level] || 0)) page.setSpellSlots(level, value)
                                         }
                                     }
+
                                     Flow {
                                         visible: level > 0
                                         Layout.fillWidth: true
-                                        spacing: 4
+                                        spacing: 5
                                         Repeater {
                                             model: level > 0 ? (page.spellSlots[level] || 0) : 0
-                                            CheckBox {
+                                            SquareCheckBox {
                                                 required property int index
+                                                fillColor: Theme.accent
                                                 checked: !!((page.expendedSlots[level] || [])[index])
                                                 onToggled: page.setSpellSpent(level, index, checked)
                                                 ToolTip.visible: hovered
@@ -719,18 +954,19 @@ Item {
                                             }
                                         }
                                     }
-                                    TextArea {
+
+                                    AppTextArea {
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         text: page.spellTexts[level] || ""
                                         placeholderText: level === 0 ? "Заговоры…" : "Заклинания уровня " + level + "…"
-                                        wrapMode: TextArea.Wrap
-                                        onActiveFocusChanged: if (!activeFocus) page.setSpellText(level, text)
+                                        onTextChanged: if (text !== (page.spellTexts[level] || "")) page.setSpellText(level, text)
                                     }
                                 }
                             }
                         }
                     }
+
                     Item { Layout.preferredHeight: 16 }
                 }
             }
@@ -773,10 +1009,16 @@ Item {
         contentItem: ColumnLayout {
             implicitWidth: Math.min(440, Math.max(300, page.width - 40))
             spacing: 10
+
             LabeledField { id: weaponName; Layout.fillWidth: true; label: "НАЗВАНИЕ" }
             LabeledField { id: weaponDamage; Layout.fillWidth: true; label: "УРОН / ВИД" }
-            RowLayout {
+
+            GridLayout {
                 Layout.fillWidth: true
+                columns: page.width < 520 ? 1 : 3
+                columnSpacing: 10
+                rowSpacing: 8
+
                 ColumnLayout {
                     Layout.fillWidth: true
                     Label { text: "ХАРАКТЕРИСТИКА"; color: Theme.textMuted; font.pixelSize: 11 }
@@ -784,15 +1026,23 @@ Item {
                 }
                 CheckBox { id: weaponProf; text: "Владение" }
                 ColumnLayout {
+                    Layout.fillWidth: true
                     Label { text: "БОНУС"; color: Theme.textMuted; font.pixelSize: 11 }
-                    SpinBox { id: weaponMagic; from: -10; to: 10; editable: true }
+                    NumberSpinBox { id: weaponMagic; Layout.fillWidth: true; from: -10; to: 10 }
                 }
             }
+
             Label {
                 text: "Итог: " + page.signed((weaponAbility.currentIndex === 0 ? 0 : page.statModifier(page.abilityCodes[weaponAbility.currentIndex])) + (weaponProf.checked ? proficiencySpin.value : 0) + weaponMagic.value)
                 color: Theme.accentStrong
             }
-            TextArea { id: weaponNotes; Layout.fillWidth: true; implicitHeight: 90; placeholderText: "Заметки"; wrapMode: TextArea.Wrap }
+
+            AppTextArea {
+                id: weaponNotes
+                Layout.fillWidth: true
+                implicitHeight: 90
+                placeholderText: "Заметки"
+            }
         }
 
         onAccepted: {
