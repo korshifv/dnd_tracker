@@ -5,7 +5,7 @@ on:
     tags:
       - 'v*'
     branches:
-      - 'release/v2.0.0'
+      - 'release/v*'
 
 permissions:
   contents: write
