@@ -19,7 +19,7 @@ QtObject {
     readonly property color teal: darkMode ? "#94E2D5" : "#81C8BE"
     readonly property color sky: darkMode ? "#89DCEB" : "#99D1DB"
     readonly property color sapphire: darkMode ? "#74C7EC" : "#85C1DC"
-    readonly property color blue: darkMode ? "#89B4FA" : "#8CA AEE"
+    readonly property color blue: darkMode ? "#89B4FA" : "#8CAAEE"
     readonly property color lavender: darkMode ? "#B4BEFE" : "#BABBF1"
     readonly property color textBase: darkMode ? "#CDD6F4" : "#C6D0F5"
     readonly property color subtext1: darkMode ? "#BAC2DE" : "#B5BFE2"
