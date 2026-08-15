@@ -213,6 +213,8 @@ Item {
         dim: true
         interactive: true
         padding: 0
+        topPadding: Qt.platform.os === "android" ? 28 : 0
+        bottomPadding: Qt.platform.os === "android" ? 24 : 0
 
         background: Rectangle {
             color: Theme.surface
