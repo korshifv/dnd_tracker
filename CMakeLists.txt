@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(dnd_tracker VERSION 2.0.0 LANGUAGES CXX)
+project(dnd_tracker VERSION 2.0.1 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CTest)
@@ -85,7 +85,7 @@ if(ANDROID)
         QT_ANDROID_TARGET_SDK_VERSION 36
         QT_ANDROID_SDK_BUILD_TOOLS_REVISION "36.0.0"
         QT_ANDROID_PACKAGE_NAME "org.dnd_tracker.app"
-        QT_ANDROID_VERSION_CODE 20000
+        QT_ANDROID_VERSION_CODE 20001
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
     )
 endif()
