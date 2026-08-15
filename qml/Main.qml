@@ -38,6 +38,28 @@ ApplicationWindow {
     palette.placeholderText: Theme.textMuted
     palette.accent: Theme.accent
 
+    palette.disabled.window: Theme.background
+    palette.disabled.windowText: Theme.overlay0
+    palette.disabled.base: Theme.surface
+    palette.disabled.alternateBase: Theme.surface
+    palette.disabled.text: Theme.overlay0
+    palette.disabled.button: Theme.surfaceRaised
+    palette.disabled.buttonText: Theme.overlay0
+    palette.disabled.brightText: Theme.subtext0
+    palette.disabled.light: Theme.surface1
+    palette.disabled.midlight: Theme.surface0
+    palette.disabled.mid: Theme.surface2
+    palette.disabled.dark: Theme.mantle
+    palette.disabled.shadow: Theme.crust
+    palette.disabled.highlight: Theme.surface1
+    palette.disabled.highlightedText: Theme.subtext0
+    palette.disabled.link: Theme.overlay1
+    palette.disabled.linkVisited: Theme.overlay1
+    palette.disabled.toolTipBase: Theme.surfaceRaised
+    palette.disabled.toolTipText: Theme.subtext0
+    palette.disabled.placeholderText: Theme.overlay0
+    palette.disabled.accent: Theme.overlay1
+
     property int section: 0
     readonly property bool compact: width < 760
 
