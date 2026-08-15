@@ -52,6 +52,9 @@ qt_add_qml_module(dnd_tracker
         qml/components/AppButton.qml
         qml/components/LabeledField.qml
         qml/components/Surface.qml
+        qml/components/NumberSpinBox.qml
+        qml/components/AppTextArea.qml
+        qml/components/SquareCheckBox.qml
         qml/pages/InitiativePage.qml
         qml/pages/CharactersPage.qml
         qml/pages/CharacterSheetPage.qml
