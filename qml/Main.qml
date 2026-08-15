@@ -13,6 +13,31 @@ ApplicationWindow {
     title: "DnD Tracker"
     color: Theme.background
 
+    // Propagate the Catppuccin palette into native/default Qt Quick Controls.
+    // Explicit roles here fix controls that previously fell back to platform
+    // black text/icons in the dark UI (SpinBox, CheckBox, TabButton, etc.).
+    palette.window: Theme.background
+    palette.windowText: Theme.text
+    palette.base: Theme.surfaceRaised
+    palette.alternateBase: Theme.surface
+    palette.text: Theme.text
+    palette.button: Theme.surfaceRaised
+    palette.buttonText: Theme.text
+    palette.brightText: Theme.rosewater
+    palette.light: Theme.surfaceHover
+    palette.midlight: Theme.surfaceRaised
+    palette.mid: Theme.border
+    palette.dark: Theme.mantle
+    palette.shadow: Theme.crust
+    palette.highlight: Theme.accent
+    palette.highlightedText: Theme.onAccent
+    palette.link: Theme.link
+    palette.linkVisited: Theme.mauve
+    palette.toolTipBase: Theme.surfaceRaised
+    palette.toolTipText: Theme.text
+    palette.placeholderText: Theme.textMuted
+    palette.accent: Theme.accent
+
     property int section: 0
     readonly property bool compact: width < 760
 
