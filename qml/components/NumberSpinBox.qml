@@ -25,8 +25,12 @@ SpinBox {
 
         function commitValue() {
             const parsed = control.valueFromText(text, control.locale)
-            control.value = Math.max(control.from, Math.min(control.to, parsed))
+            const nextValue = Math.max(control.from, Math.min(control.to, parsed))
+            const changed = nextValue !== control.value
+            control.value = nextValue
             text = control.textFromValue(control.value, control.locale)
+            if (changed)
+                control.valueModified()
         }
 
         onAccepted: commitValue()
