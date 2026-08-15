@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - 'release/v2.0.0'
 
 permissions:
   contents: write
@@ -241,7 +243,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          set -euo pipefail
+          release_tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" == "branch" && "$release_tag" == release/* ]]; then
+            release_tag="${release_tag#release/}"
+          fi
+
+          gh release create "$release_tag" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
+            --target "$GITHUB_SHA" \
+            --title "$release_tag" \
             --generate-notes
