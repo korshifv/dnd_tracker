@@ -8,6 +8,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <QDebug>
 
 int main(int argc, char *argv[]) {
@@ -16,6 +17,11 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationVersion("2.0.0");
 
     QGuiApplication app(argc, argv);
+
+    // Keep Qt Quick Controls visually consistent and palette-driven on every
+    // target. Platform defaults (Material on Android, Windows style, Fusion)
+    // do not all consume the same palette roles.
+    QQuickStyle::setStyle("Basic");
 
     if (!Storage::ensureDirs()) {
         qCritical() << "Unable to create application data directory:"
