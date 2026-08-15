@@ -27,7 +27,7 @@ ColumnLayout {
         color: Theme.text
         placeholderTextColor: Theme.textMuted
         selectionColor: Theme.accent
-        selectedTextColor: "#0D0F14"
+        selectedTextColor: Theme.onAccent
         onEditingFinished: root.editingFinished()
         background: Rectangle {
             color: Theme.surfaceRaised

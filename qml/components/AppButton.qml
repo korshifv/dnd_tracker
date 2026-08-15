@@ -11,7 +11,7 @@ Button {
 
     contentItem: Text {
         text: control.text
-        color: control.primary ? "#0D0F14" : (control.danger ? Theme.danger : Theme.text)
+        color: control.primary ? Theme.onAccent : (control.danger ? Theme.danger : Theme.text)
         font.pixelSize: 14
         font.weight: Font.DemiBold
         horizontalAlignment: Text.AlignHCenter
