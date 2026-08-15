@@ -13,9 +13,12 @@ ApplicationWindow {
     title: "DnD Tracker"
     color: Theme.background
 
+    // Android 15+ is edge-to-edge. Qt 6.8 does not expose the newer SafeArea
+    // attached API we use on later Qt, so keep compact conservative insets here.
+    readonly property int systemTopInset: Qt.platform.os === "android" ? 28 : 0
+    readonly property int systemBottomInset: Qt.platform.os === "android" ? 24 : 0
+
     // Propagate the Catppuccin palette into native/default Qt Quick Controls.
-    // Explicit roles here fix controls that previously fell back to platform
-    // black text/icons in the dark UI (SpinBox, CheckBox, TabButton, etc.).
     palette.window: Theme.background
     palette.windowText: Theme.text
     palette.base: Theme.surfaceRaised
@@ -69,6 +72,8 @@ ApplicationWindow {
 
     RowLayout {
         anchors.fill: parent
+        anchors.topMargin: window.systemTopInset
+        anchors.bottomMargin: (window.compact && contentStack.depth === 1) ? 0 : window.systemBottomInset
         spacing: 0
 
         Rectangle {
@@ -141,7 +146,8 @@ ApplicationWindow {
     footer: TabBar {
         visible: window.compact && contentStack.depth === 1
         currentIndex: window.section
-        height: visible ? 62 : 0
+        height: visible ? 62 + window.systemBottomInset : 0
+        bottomPadding: window.systemBottomInset
         background: Rectangle {
             color: Theme.surface
             border.width: 1
@@ -162,7 +168,7 @@ ApplicationWindow {
         id: errorPopup
         width: Math.min(window.width - 32, 520)
         x: (window.width - width) / 2
-        y: 18
+        y: window.systemTopInset + 18
         padding: 14
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle {
