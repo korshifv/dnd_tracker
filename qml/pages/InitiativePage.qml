@@ -106,7 +106,7 @@ Item {
                 required property string groupName
                 required property string avatarColor
                 required property bool activeTurn
-                property bool compactCard: width < 620
+                property bool compactCard: width < 820
 
                 width: ListView.view.width
                 implicitHeight: compactCard ? compactLayout.implicitHeight + 24 : wideLayout.implicitHeight + 24
@@ -170,64 +170,41 @@ Item {
                         }
                     }
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Label {
-                            text: "HP " + hp
-                            color: Theme.text
-                            font.weight: Font.Bold
-                            Layout.preferredWidth: 54
-                        }
-                        NumberSpinBox {
-                            id: compactEffectAmount
-                            Layout.fillWidth: true
-                            from: 1
-                            to: 999
-                            value: 1
-                        }
-                        AppButton {
-                            text: "−"
-                            danger: true
-                            implicitWidth: 46
-                            ToolTip.visible: hovered
-                            ToolTip.text: "Урон"
-                            onClicked: Initiative.applyDamage(index, compactEffectAmount.value)
-                        }
-                        AppButton {
-                            text: "+"
-                            implicitWidth: 46
-                            ToolTip.visible: hovered
-                            ToolTip.text: "Лечение"
-                            onClicked: Initiative.applyHeal(index, compactEffectAmount.value)
-                        }
-                    }
-
                     GridLayout {
                         Layout.fillWidth: true
                         columns: 2
                         columnSpacing: 10
+                        rowSpacing: 8
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            Label { text: "КД"; color: Theme.textMuted; font.pixelSize: 11 }
-                            Rectangle {
+                            spacing: 3
+                            Label { text: "HP"; color: Theme.textMuted; font.pixelSize: 11 }
+                            NumberSpinBox {
                                 Layout.fillWidth: true
-                                implicitHeight: Theme.touchTarget
-                                radius: Theme.radiusSmall
-                                color: Theme.surfaceRaised
-                                border.width: 1
-                                border.color: Theme.border
-                                Label {
-                                    anchors.centerIn: parent
-                                    text: armorClass > 0 ? armorClass : "—"
-                                    color: Theme.text
-                                }
+                                from: -999
+                                to: 9999
+                                value: hp
+                                onValueChanged: if (value !== hp) Initiative.setHp(index, value)
                             }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
+                            spacing: 3
+                            Label { text: "КД"; color: Theme.textMuted; font.pixelSize: 11 }
+                            NumberSpinBox {
+                                Layout.fillWidth: true
+                                from: 0
+                                to: 99
+                                value: armorClass
+                                onValueChanged: if (value !== armorClass) Initiative.setArmorClass(index, value)
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
                             Label { text: "Инициатива"; color: Theme.textMuted; font.pixelSize: 11 }
                             NumberSpinBox {
                                 Layout.fillWidth: true
@@ -236,6 +213,35 @@ Item {
                                 value: initiative
                                 onValueChanged: if (value !== initiative) Initiative.setInitiative(index, value)
                             }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+                            Label { text: "Урон / лечение"; color: Theme.textMuted; font.pixelSize: 11 }
+                            NumberSpinBox {
+                                id: compactEffectAmount
+                                Layout.fillWidth: true
+                                from: 1
+                                to: 999
+                                value: 1
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        AppButton {
+                            Layout.fillWidth: true
+                            text: "− Урон"
+                            danger: true
+                            onClicked: Initiative.applyDamage(index, compactEffectAmount.value)
+                        }
+                        AppButton {
+                            Layout.fillWidth: true
+                            text: "+ Лечение"
+                            onClicked: Initiative.applyHeal(index, compactEffectAmount.value)
                         }
                     }
 
@@ -309,13 +315,33 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
-                        Label { text: "HP " + hp; color: Theme.text; font.weight: Font.Bold }
-                        NumberSpinBox { id: wideEffectAmount; Layout.preferredWidth: 100; from: 1; to: 999; value: 1 }
-                        AppButton { text: "−"; danger: true; implicitWidth: 44; onClicked: Initiative.applyDamage(index, wideEffectAmount.value) }
-                        AppButton { text: "+"; implicitWidth: 44; onClicked: Initiative.applyHeal(index, wideEffectAmount.value) }
-                        Label { text: armorClass > 0 ? "КД " + armorClass : "КД —"; color: Theme.text; Layout.preferredWidth: 74 }
+
                         ColumnLayout {
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: 100
+                            spacing: 1
+                            Label { text: "HP"; color: Theme.textMuted; font.pixelSize: 10 }
+                            NumberSpinBox {
+                                Layout.fillWidth: true
+                                from: -999
+                                to: 9999
+                                value: hp
+                                onValueChanged: if (value !== hp) Initiative.setHp(index, value)
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.preferredWidth: 90
+                            spacing: 1
+                            Label { text: "КД"; color: Theme.textMuted; font.pixelSize: 10 }
+                            NumberSpinBox {
+                                Layout.fillWidth: true
+                                from: 0
+                                to: 99
+                                value: armorClass
+                                onValueChanged: if (value !== armorClass) Initiative.setArmorClass(index, value)
+                            }
+                        }
+                        ColumnLayout {
+                            Layout.preferredWidth: 110
                             spacing: 1
                             Label { text: "Инициатива"; color: Theme.textMuted; font.pixelSize: 10 }
                             NumberSpinBox {
@@ -326,6 +352,14 @@ Item {
                                 onValueChanged: if (value !== initiative) Initiative.setInitiative(index, value)
                             }
                         }
+                        ColumnLayout {
+                            Layout.preferredWidth: 100
+                            spacing: 1
+                            Label { text: "Эффект"; color: Theme.textMuted; font.pixelSize: 10 }
+                            NumberSpinBox { id: wideEffectAmount; Layout.fillWidth: true; from: 1; to: 999; value: 1 }
+                        }
+                        AppButton { text: "−"; danger: true; implicitWidth: 44; onClicked: Initiative.applyDamage(index, wideEffectAmount.value) }
+                        AppButton { text: "+"; implicitWidth: 44; onClicked: Initiative.applyHeal(index, wideEffectAmount.value) }
                         TextField {
                             Layout.fillWidth: true
                             text: status

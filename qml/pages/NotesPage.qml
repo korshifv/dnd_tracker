@@ -213,6 +213,8 @@ Item {
         dim: true
         interactive: true
         padding: 0
+        topPadding: Qt.platform.os === "android" ? 28 : 0
+        bottomPadding: Qt.platform.os === "android" ? 24 : 0
 
         background: Rectangle {
             color: Theme.surface
@@ -261,7 +263,7 @@ Item {
                 onClicked: page.selectedFolder = ""
 
                 contentItem: Label {
-                    text: "⌂  Корень заметок"
+                    text: "Корень заметок"
                     color: page.selectedFolder.length === 0 ? Theme.accentStrong : Theme.text
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
@@ -341,8 +343,9 @@ Item {
                             contentItem: RowLayout {
                                 spacing: 7
                                 Label {
-                                    text: row.isFolder ? "▸" : "•"
+                                    text: row.isFolder ? ">" : "•"
                                     color: row.isFolder ? Theme.accent : Theme.textMuted
+                                    font.weight: row.isFolder ? Font.Bold : Font.Normal
                                 }
                                 Label {
                                     Layout.fillWidth: true
@@ -361,8 +364,10 @@ Item {
                         }
 
                         AppButton {
-                            text: "✎"
-                            implicitWidth: 38
+                            text: "..."
+                            implicitWidth: 42
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Переименовать"
                             onClicked: {
                                 renameDialog.row = row.index
                                 renameDialog.oldPath = row.relativePath

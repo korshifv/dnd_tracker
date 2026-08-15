@@ -16,6 +16,7 @@ Item {
     property var expendedSlots: [[],[],[],[],[],[],[],[],[],[]]
     property var spellTexts: ["","","","","","","","","",""]
     property string spellAbility: "int"
+    property int passivePerceptionOverride: -1
     property int currentTab: 0
     signal backRequested()
 
@@ -42,6 +43,8 @@ Item {
         expendedSlots = clone(details.expendedSlots || [[],[],[],[],[],[],[],[],[],[]])
         spellTexts = clone(details.spellTexts || ["","","","","","","","","",""])
         spellAbility = details.spellAbility || "int"
+        passivePerceptionOverride = details.passivePerceptionOverride === undefined
+                ? -1 : Number(details.passivePerceptionOverride)
     }
 
     function statScore(code) {
@@ -67,12 +70,18 @@ Item {
         return statModifier(skill.baseStat) + (skill.profLevel || 0) * proficiencySpin.value
     }
 
-    function passivePerception() {
+    function computedPassivePerception() {
         for (let i = 0; i < skills.length; ++i) {
             if (skills[i].key === "perception")
                 return 10 + skillBonus(skills[i])
         }
         return 10 + statModifier("wis")
+    }
+
+    function passivePerception() {
+        return passivePerceptionOverride >= 0
+                ? passivePerceptionOverride
+                : computedPassivePerception()
     }
 
     function weaponHit(weapon) {
@@ -151,6 +160,7 @@ Item {
             hpTemp: hpTempSpin.value,
             armorClass: acSpin.value,
             initiative: page.statModifier("dex"),
+            passivePerceptionOverride: page.passivePerceptionOverride,
             speed: speedField.text,
             hitDie: hitDieField.text,
             str: strSpin.value,
@@ -605,26 +615,58 @@ Item {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        implicitHeight: skillList.implicitHeight + 74
+                        implicitHeight: skillsLayout.implicitHeight + 28
 
                         ColumnLayout {
+                            id: skillsLayout
                             anchors.fill: parent
                             anchors.margins: 14
                             spacing: 8
 
+                            Label {
+                                text: "НАВЫКИ"
+                                color: Theme.text
+                                font.pixelSize: 16
+                                font.weight: Font.Bold
+                            }
+
                             RowLayout {
                                 Layout.fillWidth: true
-                                Label { text: "НАВЫКИ"; color: Theme.text; font.pixelSize: 16; font.weight: Font.Bold; Layout.fillWidth: true }
+                                spacing: 8
+
                                 Label {
-                                    visible: skillsFlick.width >= 500
-                                    text: "Пассивное восприятие: " + page.passivePerception()
-                                    color: Theme.accentStrong
+                                    text: "Пассивное восприятие"
+                                    color: Theme.textMuted
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                                NumberSpinBox {
+                                    id: passivePerceptionSpin
+                                    Layout.preferredWidth: 116
+                                    from: 0
+                                    to: 99
+                                    value: page.passivePerception()
+                                    onValueChanged: {
+                                        if (activeFocus && value !== page.passivePerceptionOverride)
+                                            page.passivePerceptionOverride = value
+                                    }
+                                    onValueModified: page.passivePerceptionOverride = value
+                                }
+                                AppButton {
+                                    text: "Авто"
+                                    visible: page.passivePerceptionOverride >= 0
+                                    onClicked: {
+                                        page.passivePerceptionOverride = -1
+                                        passivePerceptionSpin.value = page.computedPassivePerception()
+                                    }
                                 }
                             }
+
                             Label {
-                                visible: skillsFlick.width < 500
-                                text: "Пассивное восприятие: " + page.passivePerception()
-                                color: Theme.accentStrong
+                                visible: page.passivePerceptionOverride < 0
+                                text: "Авто: 10 + бонус Восприятия"
+                                color: Theme.textMuted
+                                font.pixelSize: 11
                             }
 
                             ColumnLayout {
@@ -637,7 +679,6 @@ Item {
                                         required property int index
                                         Layout.fillWidth: true
                                         spacing: 6
-
                                         AppButton {
                                             text: modelData.profLevel === 2 ? "◎" : (modelData.profLevel === 1 ? "●" : "○")
                                             implicitWidth: 46

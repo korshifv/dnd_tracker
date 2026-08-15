@@ -165,6 +165,8 @@ QVariantMap AppController::characterDetails(const QString &path) const {
     out["initiative"] = document.getInitiative();
     out["speed"] = JsonUtils::safeGetString(data, {"vitality", "speed"});
     out["hitDie"] = JsonUtils::safeGetString(data, {"vitality", "hit-die"});
+    out["passivePerceptionOverride"] = JsonUtils::safeGetInt(
+        data, {"vitality", "passive-perception"}, -1);
     out["proficiency"] = data.value("proficiency").toInt(2);
     out["inspiration"] = data.value("inspiration").toBool(false);
 
@@ -273,12 +275,14 @@ bool AppController::saveCharacterBasics(const QString &path, const QVariantMap &
     const QList<QPair<QString, QString>> vitalKeys = {
         {"hp", "hp-current"}, {"hpMax", "hp-max"}, {"hpTemp", "hp-temp"},
         {"armorClass", "ac"}, {"initiative", "initiative"},
-        {"speed", "speed"}, {"hitDie", "hit-die"}
+        {"speed", "speed"}, {"hitDie", "hit-die"},
+        {"passivePerceptionOverride", "passive-perception"}
     };
     for (const auto &pair : vitalKeys) {
         if (!v.contains(pair.first)) continue;
         QVariant value = v.value(pair.first);
-        if (pair.first == "initiative") value = value.toInt();
+        if (pair.first == "initiative" || pair.first == "passivePerceptionOverride")
+            value = value.toInt();
         vitality[pair.second] = wrapped(value);
     }
     data["vitality"] = vitality;
