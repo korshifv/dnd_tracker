@@ -161,6 +161,28 @@ void InitiativeModel::setName(int row, const QString &name) {
     scheduleSave();
 }
 
+void InitiativeModel::setHp(int row, int value) {
+    if (row < 0 || row >= m_items.size())
+        return;
+    if (m_items[row].hp == value)
+        return;
+    m_items[row].hp = value;
+    syncHpToCharacter(m_items[row]);
+    emitRowChanged(row, {HpRole});
+    scheduleSave();
+}
+
+void InitiativeModel::setArmorClass(int row, int value) {
+    if (row < 0 || row >= m_items.size())
+        return;
+    if (m_items[row].armorClass == value)
+        return;
+    m_items[row].armorClass = value;
+    syncArmorClassToCharacter(m_items[row]);
+    emitRowChanged(row, {ArmorClassRole});
+    scheduleSave();
+}
+
 void InitiativeModel::setInitiative(int row, int value) {
     if (row < 0 || row >= m_items.size())
         return;
@@ -502,6 +524,19 @@ void InitiativeModel::syncHpToCharacter(const Combatant &item) {
     document.setHp(item.hp);
     if (!document.save())
         emit operationFailed(tr("HP изменён в бою, но файл персонажа не удалось сохранить"));
+}
+
+void InitiativeModel::syncArmorClassToCharacter(const Combatant &item) {
+    if (item.filePath.isEmpty())
+        return;
+
+    CharacterDocument document;
+    if (!document.load(item.filePath))
+        return;
+
+    document.setArmorClass(item.armorClass);
+    if (!document.save())
+        emit operationFailed(tr("КД изменён в бою, но файл персонажа не удалось сохранить"));
 }
 
 int InitiativeModel::indexOfId(const QString &id) const {
