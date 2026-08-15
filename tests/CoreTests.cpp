@@ -12,6 +12,7 @@ class CoreTests : public QObject {
 
 private slots:
     void parsesNumericStrings();
+    void initiativeUsesDexterityModifier();
     void lssRoundTripPreservesUnknownData();
     void rejectsBrokenNestedLssData();
 };
@@ -30,6 +31,31 @@ void CoreTests::parsesNumericStrings() {
     QCOMPARE(JsonUtils::safeGetInt(data, {"vitality", "bad"}, 17), 17);
 }
 
+void CoreTests::initiativeUsesDexterityModifier() {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath("initiative.json");
+
+    const QJsonObject character{
+        {"stats", QJsonObject{
+            {"dex", QJsonObject{{"score", 20}}}
+        }},
+        {"vitality", QJsonObject{
+            // Deliberately stale: the character's real initiative is DEX +5.
+            {"initiative", QJsonObject{{"value", 0}}}
+        }}
+    };
+
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(QJsonDocument(character).toJson());
+    file.close();
+
+    CharacterDocument document;
+    QVERIFY(document.load(path));
+    QCOMPARE(document.getInitiative(), 5);
+}
+
 void CoreTests::lssRoundTripPreservesUnknownData() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -37,6 +63,9 @@ void CoreTests::lssRoundTripPreservesUnknownData() {
 
     const QJsonObject inner{
         {"name", QJsonObject{{"value", "Тестовый герой"}}},
+        {"stats", QJsonObject{
+            {"dex", QJsonObject{{"score", 16}}}
+        }},
         {"vitality", QJsonObject{
             {"hp-current", QJsonObject{{"value", 10}}},
             {"hp-max", QJsonObject{{"value", 15}}},
