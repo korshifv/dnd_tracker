@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.13'
 
       - name: Install tools
         shell: pwsh
@@ -54,11 +54,11 @@ jobs:
 
       - name: Install deployable tree
         shell: pwsh
-        run: cmake --install build --prefix package
+        run: cmake --install build --prefix "$env:RUNNER_TEMP\package"
 
       - name: Archive
         shell: pwsh
-        run: Compress-Archive -Path package\* -DestinationPath dnd_tracker-windows-x64.zip
+        run: Compress-Archive -Path "$env:RUNNER_TEMP\package\*" -DestinationPath dnd_tracker-windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -123,10 +123,10 @@ jobs:
           cmake --build build --parallel
 
       - name: Install deployable tree
-        run: cmake --install build --prefix package
+        run: cmake --install build --prefix "$RUNNER_TEMP/package"
 
       - name: Archive
-        run: tar -C package -czf dnd_tracker-linux-x64.tar.gz .
+        run: tar -C "$RUNNER_TEMP/package" -czf dnd_tracker-linux-x64.tar.gz .
 
       - uses: actions/upload-artifact@v4
         with:
