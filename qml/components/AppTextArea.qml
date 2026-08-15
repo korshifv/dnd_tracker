@@ -17,7 +17,7 @@ TextArea {
     // still focuses the field, so scrolling no longer summons the keyboard.
     onReleased: function(event) {
         if (!activeFocus)
-            forceActiveFocus(Qt.MouseFocusReason)
+            forceActiveFocus()
     }
 
     background: Rectangle {
