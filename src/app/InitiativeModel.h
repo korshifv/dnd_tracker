@@ -36,8 +36,6 @@ public:
     Q_INVOKABLE bool addCharacter(const QString &filePath, const QString &group = QString());
     Q_INVOKABLE void removeAt(int row);
     Q_INVOKABLE void setName(int row, const QString &name);
-    Q_INVOKABLE void setHp(int row, int value);
-    Q_INVOKABLE void setArmorClass(int row, int value);
     Q_INVOKABLE void setInitiative(int row, int value);
     Q_INVOKABLE void setStatus(int row, const QString &status);
     Q_INVOKABLE void setGroup(int row, const QString &group);
@@ -82,7 +80,6 @@ private:
     QString portableCharacterRef(const QString &filePath) const;
     QString resolveCharacterRef(const QString &ref) const;
     void syncHpToCharacter(const Combatant &item);
-    void syncArmorClassToCharacter(const Combatant &item);
     int indexOfId(const QString &id) const;
     void emitRowChanged(int row, const QList<int> &roles);
 };
