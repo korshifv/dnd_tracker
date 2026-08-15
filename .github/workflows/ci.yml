@@ -1,20 +1,88 @@
-name: Release
+name: Cross-platform CI
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
-permissions:
-  contents: write
+concurrency:
+  group: cross-platform-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   QT_VERSION: '6.8.3'
   QT_REPOSITORY: 'https://download.qt.io'
 
 jobs:
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build p7zip-full curl \
+            libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
+
+      - name: Install Qt from official component archives
+        run: |
+          set -euo pipefail
+          component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
+          work="$RUNNER_TEMP/qt-archives"
+          qt_root="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
+          mkdir -p "$work" "$qt_root"
+
+          mapfile -t archives < <(
+            curl -fsSL "$component" \
+              | grep -oE 'href="[^"?]+\.7z"' \
+              | cut -d'"' -f2 \
+              | sort -u
+          )
+          if (( ${#archives[@]} == 0 )); then
+            echo "No Qt archives found at $component" >&2
+            exit 1
+          fi
+
+          for file in "${archives[@]}"; do
+            [[ "$file" == *meta.7z ]] && continue
+            archive="$work/$(basename "$file")"
+            curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
+            7z x -y "$archive" -o"$qt_root" >/dev/null
+          done
+          find "$qt_root" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
+          test -e "$qt_root/bin/qt-cmake"
+
+          icu_file="$(find "$qt_root" \( -type f -o -type l \) -name 'libicui18n.so.73' -print -quit)"
+          if [[ -z "$icu_file" ]]; then
+            echo "Bundled ICU 73 was not found under $qt_root" >&2
+            find "$qt_root" -maxdepth 5 -name 'libicu*.so*' -print >&2 || true
+            exit 1
+          fi
+          icu_lib="$(dirname "$icu_file")"
+          echo "LD_LIBRARY_PATH=$icu_lib:$qt_root/lib" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package smoke test
+        run: cmake --install build --prefix "$RUNNER_TEMP/package"
+
   windows:
-    name: Package Windows x64
+    name: Windows x64
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -41,99 +109,28 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure and build
+      - name: Configure
         shell: pwsh
         run: |
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DBUILD_TESTING=OFF `
             -DCMAKE_PREFIX_PATH="$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64"
-          cmake --build build --parallel
 
-      - name: Install deployable tree
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
         shell: pwsh
-        run: cmake --install build --prefix package
+        run: |
+          $env:Path = "$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64\bin;$env:Path"
+          ctest --test-dir build --output-on-failure
 
-      - name: Archive
+      - name: Package smoke test
         shell: pwsh
-        run: Compress-Archive -Path package\* -DestinationPath dnd_tracker-windows-x64.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-windows-x64
-          path: dnd_tracker-windows-x64.zip
-          if-no-files-found: error
-
-  linux:
-    name: Package Linux x64
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build p7zip-full curl \
-            libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0
-
-      - name: Install Qt
-        run: |
-          set -euo pipefail
-          component="$QT_REPOSITORY/online/qtsdkrepository/linux_x64/desktop/qt6_683/qt6_683/qt.qt6.683.linux_gcc_64/"
-          work="$RUNNER_TEMP/qt-archives"
-          qt_root="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
-          mkdir -p "$work" "$qt_root"
-          mapfile -t archives < <(
-            curl -fsSL "$component" \
-              | grep -oE 'href="[^"?]+\.7z"' \
-              | cut -d'"' -f2 \
-              | sort -u
-          )
-          if (( ${#archives[@]} == 0 )); then
-            echo "No Qt archives found at $component" >&2
-            exit 1
-          fi
-          for file in "${archives[@]}"; do
-            [[ "$file" == *meta.7z ]] && continue
-            archive="$work/$(basename "$file")"
-            curl -fL --retry 3 --retry-delay 2 -o "$archive" "${component}${file}"
-            7z x -y "$archive" -o"$qt_root" >/dev/null
-          done
-          find "$qt_root" -type f \( -path '*/bin/*' -o -path '*/libexec/*' \) -exec chmod +x {} +
-          test -e "$qt_root/bin/qt-cmake"
-
-          icu_file="$(find "$qt_root" \( -type f -o -type l \) -name 'libicui18n.so.73' -print -quit)"
-          if [[ -z "$icu_file" ]]; then
-            echo "Bundled ICU 73 was not found under $qt_root" >&2
-            find "$qt_root" -maxdepth 5 -name 'libicu*.so*' -print >&2 || true
-            exit 1
-          fi
-          icu_lib="$(dirname "$icu_file")"
-          echo "LD_LIBRARY_PATH=$icu_lib:$qt_root/lib" >> "$GITHUB_ENV"
-
-      - name: Configure and build
-        run: |
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=OFF \
-            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
-          cmake --build build --parallel
-
-      - name: Install deployable tree
-        run: cmake --install build --prefix package
-
-      - name: Archive
-        run: tar -C package -czf dnd_tracker-linux-x64.tar.gz .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-x64
-          path: dnd_tracker-linux-x64.tar.gz
-          if-no-files-found: error
+        run: cmake --install build --prefix "$env:RUNNER_TEMP\package"
 
   android:
-    name: Package Android ARM64
+    name: Android ARM64
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -157,9 +154,10 @@ jobs:
             'build-tools;36.0.0' \
             'ndk;27.2.12479018'
 
-      - name: Install Qt host and Android kits
+      - name: Install Qt host and Android kits from official archives
         run: |
           set -euo pipefail
+
           install_component() {
             local component="$1"
             local work="$2"
@@ -190,6 +188,7 @@ jobs:
           android_component="$QT_REPOSITORY/online/qtsdkrepository/all_os/android/qt6_683/qt6_683_arm64_v8a/qt.qt6.683.android_arm64_v8a/"
           install_component "$host_component" "$RUNNER_TEMP/qt-host" "$host_root"
           install_component "$android_component" "$RUNNER_TEMP/qt-android" "$android_root"
+
           test -e "$host_root/bin/qt-cmake"
           test -e "$android_root/bin/qt-cmake"
 
@@ -202,46 +201,24 @@ jobs:
           icu_lib="$(dirname "$icu_file")"
           echo "LD_LIBRARY_PATH=$icu_lib:$host_root/lib" >> "$GITHUB_ENV"
 
-      - name: Configure and build APK
+      - name: Configure
         run: |
           "$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a/bin/qt-cmake" \
             -S . -B build-android -G Ninja \
             -DQT_HOST_PATH="$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64" \
             -DANDROID_SDK_ROOT="$ANDROID_HOME" \
             -DANDROID_NDK_ROOT="$ANDROID_HOME/ndk/27.2.12479018" \
-            -DANDROID_ABI=arm64-v8a \
-            -DBUILD_TESTING=OFF
-          cmake --build build-android --target apk --parallel
+            -DANDROID_ABI=arm64-v8a
 
-      - name: Collect APK
-        run: |
-          set -euo pipefail
-          apk="$(find build-android -type f -name '*.apk' | head -n 1)"
-          test -n "$apk"
-          cp "$apk" dnd_tracker-android-arm64.apk
+      - name: Build native code
+        run: cmake --build build-android --parallel
 
-      - uses: actions/upload-artifact@v4
+      - name: Build APK
+        run: cmake --build build-android --target apk --parallel
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: release-android-arm64
-          path: dnd_tracker-android-arm64.apk
+          name: dnd-tracker-android-arm64
+          path: build-android/**/*.apk
           if-no-files-found: error
-
-  publish:
-    name: Publish GitHub release
-    needs: [windows, linux, android]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          path: dist
-          merge-multiple: true
-
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes

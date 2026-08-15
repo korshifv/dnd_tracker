@@ -1,49 +1,67 @@
 #include "CharacterDocument.h"
 #include "JsonUtils.h"
 
+#include <QJsonParseError>
+#include <QSaveFile>
+
 CharacterDocument::CharacterDocument(QObject *parent) : QObject(parent) {}
 
 bool CharacterDocument::load(const QString &filePath) {
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly))
         return false;
-        
-    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-    if (doc.isNull())
+
+    QJsonParseError rootError;
+    const QJsonDocument rootDocument = QJsonDocument::fromJson(file.readAll(), &rootError);
+    if (rootError.error != QJsonParseError::NoError || !rootDocument.isObject())
         return false;
-        
-    m_rootLssJson = doc.object();
-    m_filePath = filePath;
-    
-    QString innerJsonStr = m_rootLssJson.value("data").toString();
-    QJsonDocument innerDoc = QJsonDocument::fromJson(innerJsonStr.toUtf8());
-    
-    if (!innerDoc.isNull() && !innerDoc.object().isEmpty()) {
-        m_characterData = innerDoc.object();
+
+    const QJsonObject root = rootDocument.object();
+    QJsonObject characterData;
+
+    if (root.contains("data")) {
+        const QJsonValue dataValue = root.value("data");
+        if (!dataValue.isString())
+            return false;
+
+        QJsonParseError innerError;
+        const QJsonDocument innerDocument =
+            QJsonDocument::fromJson(dataValue.toString().toUtf8(), &innerError);
+        if (innerError.error != QJsonParseError::NoError || !innerDocument.isObject())
+            return false;
+        characterData = innerDocument.object();
     } else {
-        // Fallback если формат не совсем стандартный
-        m_characterData = m_rootLssJson;
+        characterData = root;
     }
-    
+
+    m_rootLssJson = root;
+    m_characterData = characterData;
+    m_filePath = filePath;
     emit dataChanged();
     return true;
 }
 
 bool CharacterDocument::save() {
-    if (m_filePath.isEmpty()) return false;
-    
-    QFile file(m_filePath);
+    if (m_filePath.isEmpty())
+        return false;
+
+    QJsonObject root = m_rootLssJson;
+    if (root.contains("data")) {
+        root["data"] = QString::fromUtf8(
+            QJsonDocument(m_characterData).toJson(QJsonDocument::Compact));
+    } else {
+        root = m_characterData;
+    }
+
+    QSaveFile file(m_filePath);
     if (!file.open(QIODevice::WriteOnly))
         return false;
-        
-    // Если данные были вложены в "data", упаковываем обратно
-    if (m_rootLssJson.contains("data")) {
-        m_rootLssJson["data"] = QString::fromUtf8(QJsonDocument(m_characterData).toJson(QJsonDocument::Compact));
-    } else {
-        m_rootLssJson = m_characterData;
-    }
-    
-    file.write(QJsonDocument(m_rootLssJson).toJson());
+    if (file.write(QJsonDocument(root).toJson(QJsonDocument::Indented)) < 0)
+        return false;
+    if (!file.commit())
+        return false;
+
+    m_rootLssJson = root;
     return true;
 }
 
@@ -110,7 +128,5 @@ void CharacterDocument::updateVitalityField(const QString &field, int value) {
     fieldObj["value"] = value;
     vitality[field] = fieldObj;
     m_characterData["vitality"] = vitality;
-    
-    // Эмитим сигнал для обновления UI
     emit dataChanged();
 }
