@@ -13,11 +13,16 @@ TextArea {
     selectByMouse: true
     padding: 10
 
-    // A Flickable may steal a drag without the editor taking focus. A real tap
-    // still focuses the field, so scrolling no longer summons the keyboard.
-    onReleased: function(event) {
-        if (!activeFocus)
-            forceActiveFocus()
+    // Keep drags/swipes from summoning the Android keyboard, but treat a real
+    // tap as an explicit request to edit. TapHandler cancels once the pointer
+    // turns into a drag, so scrolling and editing no longer fight each other.
+    TapHandler {
+        gesturePolicy: TapHandler.DragThreshold
+        onTapped: function(eventPoint, button) {
+            control.forceActiveFocus()
+            control.cursorPosition = control.positionAt(eventPoint.position.x, eventPoint.position.y)
+            Qt.inputMethod.show()
+        }
     }
 
     background: Rectangle {
