@@ -2,6 +2,7 @@
 #define CLASSICSHEETSTORE_H
 
 #include <QObject>
+#include <QString>
 #include <QVariantMap>
 
 class ClassicSheetStore : public QObject {
