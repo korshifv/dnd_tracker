@@ -161,7 +161,7 @@ ApplicationWindow {
 
     Component {
         id: characterSheetComponent
-        CharacterSheetPage { onBackRequested: contentStack.pop() }
+        CharacterSheetHost { onBackRequested: contentStack.pop() }
     }
 
     Popup {

@@ -37,6 +37,8 @@ qt_add_executable(dnd_tracker
     src/app/AppController.h
     src/app/CharacterRepositoryModel.cpp
     src/app/CharacterRepositoryModel.h
+    src/app/ClassicSheetStore.cpp
+    src/app/ClassicSheetStore.h
     src/app/InitiativeModel.cpp
     src/app/InitiativeModel.h
     src/app/NotesModel.cpp
@@ -58,6 +60,12 @@ qt_add_qml_module(dnd_tracker
         qml/pages/InitiativePage.qml
         qml/pages/CharactersPage.qml
         qml/pages/CharacterSheetPage.qml
+        qml/pages/CharacterSheetHost.qml
+        qml/pages/ClassicCharacterSheetPage.qml
+        qml/pages/ClassicCharacterSheetBook.qml
+        qml/pages/ClassicSheetPageOne.qml
+        qml/pages/ClassicSheetPageTwo.qml
+        qml/pages/ClassicSheetPageThree.qml
         qml/pages/NotesPage.qml
 )
 
