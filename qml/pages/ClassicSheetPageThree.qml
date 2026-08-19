@@ -10,6 +10,31 @@ Rectangle {
     border.width: 1
     border.color: "#c7bfb2"
 
+    function displayedSpellLine(level, index) {
+        const current = book.spellLine(level, index)
+        if (current.length > 0 || ClassicStore.isSpellLevelEdited(book.filePath, level))
+            return current
+        return ClassicStore.spellLine(book.filePath, level, index)
+    }
+
+    function beginSpellEdit(level) {
+        if (ClassicStore.isSpellLevelEdited(book.filePath, level))
+            return
+
+        // If App.characterDetails could not flatten an LSS custom/rich spell
+        // node, seed the whole level from the original text before applying the
+        // first row edit. That way editing one spell cannot erase its siblings.
+        const fallback = ClassicStore.spellText(book.filePath, level)
+        if (String(book.spellTexts[level] || "").trim().length === 0 && fallback.length > 0) {
+            let copy = JSON.parse(JSON.stringify(book.spellTexts || []))
+            while (copy.length < 10)
+                copy.push("")
+            copy[level] = fallback
+            book.spellTexts = copy
+        }
+        ClassicStore.markSpellEdited(book.filePath, level)
+    }
+
     component PaperField: Item {
         id: field
         property string label: ""
@@ -160,18 +185,27 @@ Rectangle {
                     visible: block.level > 0
                     x: 0
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 11; height: 11; radius: 6
+                    width: 13; height: 13; radius: 7
                     color: book.spellPrepared(block.level, index) ? book.inkColor : "transparent"
-                    border.width: 1
+                    border.width: 1.2
                     border.color: book.inkColor
-                    MouseArea { anchors.fill: parent; onClicked: book.toggleSpellPrepared(block.level, index) }
+
+                    // Keep the printed circle small, but give it a much larger
+                    // invisible touch target. This matters a lot at 40–60% zoom.
+                    MouseArea {
+                        anchors.centerIn: parent
+                        width: 40
+                        height: Math.max(30, block.rowHeight)
+                        preventStealing: true
+                        onClicked: book.toggleSpellPrepared(block.level, index)
+                    }
                 }
 
                 TextField {
-                    x: block.level > 0 ? 18 : 0
-                    width: parent.width - (block.level > 0 ? 18 : 0)
+                    x: block.level > 0 ? 20 : 0
+                    width: parent.width - (block.level > 0 ? 20 : 0)
                     height: parent.height
-                    text: book.spellLine(block.level, index)
+                    text: sheet.displayedSpellLine(block.level, index)
                     color: book.inkColor
                     font.pixelSize: 10
                     verticalAlignment: Text.AlignVCenter
@@ -187,7 +221,10 @@ Rectangle {
                             color: "#91897e"
                         }
                     }
-                    onTextEdited: book.setSpellLine(block.level, index, text)
+                    onTextEdited: {
+                        sheet.beginSpellEdit(block.level)
+                        book.setSpellLine(block.level, index, text)
+                    }
                 }
             }
         }
