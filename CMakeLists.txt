@@ -58,6 +58,8 @@ qt_add_qml_module(dnd_tracker
         qml/pages/InitiativePage.qml
         qml/pages/CharactersPage.qml
         qml/pages/CharacterSheetPage.qml
+        qml/pages/CharacterSheetHost.qml
+        qml/pages/ClassicCharacterSheetPage.qml
         qml/pages/NotesPage.qml
 )
 
