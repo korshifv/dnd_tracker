@@ -42,7 +42,7 @@ Item {
             onBackRequested: host.backRequested()
         }
 
-        ClassicCharacterSheetPage {
+        ClassicCharacterSheetBook {
             id: classicPage
             filePath: host.filePath
             onBackRequested: host.backRequested()
@@ -162,7 +162,7 @@ Item {
                 Layout.fillWidth: true
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
-                text: "Классический вид повторяет структуру бумажного листа D&D 5e; интерактивный — текущий интерфейс приложения. Оба режима редактируют один и тот же файл персонажа."
+                text: "Классический вид повторяет структуру трёхстраничного бумажного листа D&D 5e; интерактивный — текущий интерфейс приложения. Оба режима редактируют один и тот же файл персонажа."
                 color: Theme.textMuted
                 wrapMode: Text.WordWrap
                 font.pixelSize: 12
