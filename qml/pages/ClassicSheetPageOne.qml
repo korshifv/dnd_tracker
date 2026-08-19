@@ -459,7 +459,8 @@ Rectangle {
             text: book.equipmentValue
             color: book.inkColor; font.pixelSize: 11
             wrapMode: TextEdit.Wrap; selectByMouse: true
-            background: Item {}; padding: 2
+            background: Item {}
+            padding: 2
             onTextChanged: if (activeFocus) book.equipmentValue = text
         }
     }
