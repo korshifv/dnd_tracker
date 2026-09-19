@@ -30,12 +30,15 @@ if [[ -n "$forbidden_prefix" ]] && grep -Fq "$forbidden_prefix" <<<"$ldd_output"
 fi
 
 # If this Qt build uses ICU, every ICU dependency must resolve from the package.
-# There is deliberately no hard-coded ICU major version here: when Qt moves
-# from 73 to a newer ABI, the check follows it automatically.
+# ldd may preserve paths such as bin/../lib, so compare canonical paths rather
+# than their textual spelling. There is deliberately no hard-coded ICU major
+# version here: when Qt moves to another ABI, the check follows it automatically.
+package_lib="$(readlink -f -- "$package_root/lib")"
 while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     resolved="$(awk '{print $3}' <<<"$line")"
-    if [[ "$resolved" != "$package_root/lib/"* ]]; then
+    resolved="$(readlink -f -- "$resolved")"
+    if [[ "$resolved" != "$package_lib/"* ]]; then
         echo "ICU dependency escaped package: $line" >&2
         exit 1
     fi
