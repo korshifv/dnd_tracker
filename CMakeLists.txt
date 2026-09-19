@@ -74,6 +74,16 @@ target_link_libraries(dnd_tracker PRIVATE
     Qt6::QuickControls2
 )
 
+# Linux release archives are relocatable. Keep the executable pointed at the
+# sibling lib/ directory instead of whatever Qt/ICU happened to be installed on
+# the build runner.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    set_target_properties(dnd_tracker PROPERTIES
+        BUILD_RPATH_USE_ORIGIN TRUE
+        INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
+
 if(WIN32)
     set_target_properties(dnd_tracker PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
@@ -114,6 +124,24 @@ install(TARGETS dnd_tracker
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    # Qt's official Linux SDK can keep its private ICU runtime outside the
+    # top-level lib/ directory. The generic dependency scanner cannot resolve
+    # that runtime on a host whose system ICU has another SONAME, so discover
+    # the ICU files inside the Qt prefix itself and install them beside the
+    # deployed Qt libraries. No ICU major version is hard-coded here.
+    get_filename_component(qt_install_prefix "${Qt6Core_DIR}/../../.." ABSOLUTE)
+    file(GLOB_RECURSE qt_icu_runtime_libs
+        LIST_DIRECTORIES FALSE
+        "${qt_install_prefix}/libicu*.so*"
+    )
+    if(qt_icu_runtime_libs)
+        install(FILES ${qt_icu_runtime_libs}
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+    endif()
+endif()
 
 if(NOT ANDROID)
     qt_generate_deploy_qml_app_script(
