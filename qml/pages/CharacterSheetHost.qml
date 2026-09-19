@@ -25,11 +25,13 @@ Item {
 
     function switchMode() {
         if (normalizedMode() === "classic") {
-            classicPage.save()
+            if (!classicPage.save())
+                return
             interactivePage.reload()
             uiSettings.characterSheetMode = "interactive"
         } else {
-            interactivePage.save()
+            if (!interactivePage.save())
+                return
             classicPage.reload()
             uiSettings.characterSheetMode = "classic"
         }
