@@ -237,8 +237,8 @@ Item {
                     opacity: 0
                 }
                 AppButton {
-                    text: page.width < 620 ? "Вид" : "Классический вид"
-                    implicitWidth: page.width < 620 ? 58 : implicitContentWidth + 28
+                    text: page.width < 620 ? "Классика" : "Классический вид"
+                    implicitWidth: implicitContentWidth + 28
                     onClicked: page.modeSwitchRequested()
                     ToolTip.visible: hovered
                     ToolTip.text: "Переключить в классический лист"
