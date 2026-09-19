@@ -125,6 +125,24 @@ install(TARGETS dnd_tracker
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    # The prebuilt Qt Linux SDK ships the ICU ABI it was linked against, but
+    # CMake's runtime dependency scanner cannot necessarily resolve that ICU
+    # from the host system (and therefore cannot deploy it). Copy the ICU
+    # runtime straight from the same Qt installation. Keep the glob
+    # version-agnostic so upgrading Qt/ICU does not recreate this bug.
+    get_filename_component(qt_runtime_lib_dir "${Qt6Core_DIR}/../.." ABSOLUTE)
+    file(GLOB qt_icu_runtime_libs
+        LIST_DIRECTORIES FALSE
+        "${qt_runtime_lib_dir}/libicu*.so*"
+    )
+    if(qt_icu_runtime_libs)
+        install(FILES ${qt_icu_runtime_libs}
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+    endif()
+endif()
+
 if(NOT ANDROID)
     set(deploy_qml_args
         TARGET dnd_tracker
