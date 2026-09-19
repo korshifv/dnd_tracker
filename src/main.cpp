@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include "CharacterRepositoryModel.h"
+#include "ClassicSheetStore.h"
 #include "InitiativeModel.h"
 #include "NotesModel.h"
 #include "Storage.h"
@@ -33,12 +34,14 @@ int main(int argc, char *argv[]) {
     InitiativeModel initiative;
     NotesModel notes;
     AppController controller(&characters, &initiative, &notes);
+    ClassicSheetStore classicSheetStore;
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("App", &controller);
     engine.rootContext()->setContextProperty("Characters", &characters);
     engine.rootContext()->setContextProperty("Initiative", &initiative);
     engine.rootContext()->setContextProperty("Notes", &notes);
+    engine.rootContext()->setContextProperty("ClassicStore", &classicSheetStore);
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit,
                      &initiative, &InitiativeModel::flush);
