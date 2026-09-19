@@ -15,7 +15,7 @@
 int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("dnd_tracker");
     QCoreApplication::setOrganizationName("dnd_tracker");
-    QCoreApplication::setApplicationVersion("2.0.0");
+    QCoreApplication::setApplicationVersion("2.0.3");
 
     QGuiApplication app(argc, argv);
 
