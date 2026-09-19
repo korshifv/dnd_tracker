@@ -494,8 +494,8 @@ Item {
                     Behavior on opacity { NumberAnimation { duration: 140 } }
                 }
                 AppButton {
-                    text: book.width < 620 ? "Вид" : "Интерактивный вид"
-                    implicitWidth: book.width < 620 ? 58 : implicitContentWidth + 28
+                    text: book.width < 620 ? "Интерактив" : "Интерактивный вид"
+                    implicitWidth: implicitContentWidth + 28
                     onClicked: book.modeSwitchRequested()
                     ToolTip.visible: hovered
                     ToolTip.text: "Переключить в интерактивный лист"
