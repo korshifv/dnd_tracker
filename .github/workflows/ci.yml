@@ -79,7 +79,11 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Package smoke test
-        run: cmake --install build --prefix "$RUNNER_TEMP/package"
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/package"
+          bash ./scripts/verify_linux_package.sh \
+            "$RUNNER_TEMP/package" \
+            "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64"
 
   windows:
     name: Windows x64
