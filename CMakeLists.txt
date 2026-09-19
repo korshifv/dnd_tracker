@@ -74,6 +74,16 @@ target_link_libraries(dnd_tracker PRIVATE
     Qt6::QuickControls2
 )
 
+# Linux release archives are relocatable. Keep the executable pointed at the
+# sibling lib/ directory instead of whatever Qt/ICU happened to be installed on
+# the build runner.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    set_target_properties(dnd_tracker PROPERTIES
+        BUILD_RPATH_USE_ORIGIN TRUE
+        INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
+
 if(WIN32)
     set_target_properties(dnd_tracker PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
@@ -116,10 +126,24 @@ install(TARGETS dnd_tracker
 )
 
 if(NOT ANDROID)
-    qt_generate_deploy_qml_app_script(
+    set(deploy_qml_args
         TARGET dnd_tracker
         OUTPUT_SCRIPT deploy_script
         NO_UNSUPPORTED_PLATFORM_ERROR
     )
+
+    # Official Qt Linux builds depend on the ICU copy shipped with that Qt
+    # build. Qt's generic deployment helper normally omits libraries it treats
+    # as system runtime dependencies, which made the archive depend on the
+    # builder's libicu SONAME (for Qt 6.8.3: libicu*.so.73). Force ICU into the
+    # deploy set so users on rolling distributions do not need the exact same
+    # ICU major version installed system-wide.
+    if(UNIX AND NOT APPLE)
+        list(APPEND deploy_qml_args
+            POST_INCLUDE_REGEXES ".*/libicu[^/]*\\.so(\\..*)?$"
+        )
+    endif()
+
+    qt_generate_deploy_qml_app_script(${deploy_qml_args})
     install(SCRIPT ${deploy_script})
 endif()
