@@ -7,6 +7,7 @@ Item {
     id: book
     required property string filePath
     signal backRequested()
+    signal modeSwitchRequested()
 
     readonly property int sheetWidth: 960
     readonly property int sheetHeight: 1280
@@ -423,12 +424,17 @@ Item {
         expendedSlots = all
     }
 
-    function changeZoom(delta) {
+    function setZoom(value) {
         manualZoom = true
-        zoom = Math.max(0.28, Math.min(1.8, zoom + delta))
+        zoom = Math.max(0.28, Math.min(1.8, value))
     }
 
-    function fitToWidth() { manualZoom = false; zoom = fitScale }
+    function changeZoom(delta) { setZoom(zoom + delta) }
+
+    function fitToWidth() {
+        manualZoom = false
+        zoom = fitScale
+    }
     function previousPage() { currentPage = (currentPage + 2) % 3; sheetFlick.contentX = 0; sheetFlick.contentY = 0 }
     function nextPage() { currentPage = (currentPage + 1) % 3; sheetFlick.contentX = 0; sheetFlick.contentY = 0 }
 
@@ -483,9 +489,16 @@ Item {
                 }
                 Label {
                     id: saveState
-                    color: Theme.success
+                    color: saveState.text.indexOf("Ошибка") === 0 ? Theme.danger : Theme.success
                     opacity: 0
                     Behavior on opacity { NumberAnimation { duration: 140 } }
+                }
+                AppButton {
+                    text: book.width < 620 ? "Вид" : "Интерактивный вид"
+                    implicitWidth: book.width < 620 ? 58 : implicitContentWidth + 28
+                    onClicked: book.modeSwitchRequested()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Переключить в интерактивный лист"
                 }
                 AppButton {
                     text: "Сохранить"
@@ -516,13 +529,28 @@ Item {
                     elide: Text.ElideRight
                 }
                 AppButton { text: "›"; implicitWidth: 42; onClicked: book.nextPage() }
+
                 AppButton { text: "−"; implicitWidth: 42; onClicked: book.changeZoom(-0.1) }
+
+                Slider {
+                    id: zoomSlider
+                    visible: book.width >= 760
+                    Layout.preferredWidth: visible ? Math.min(220, Math.max(130, book.width * 0.18)) : 0
+                    from: 0.28
+                    to: 1.8
+                    stepSize: 0.01
+                    value: book.zoom
+                    onMoved: book.setZoom(value)
+                    ToolTip.visible: hovered || pressed
+                    ToolTip.text: "Масштаб " + Math.round(value * 100) + "%"
+                }
+
                 AppButton {
                     text: Math.round(book.zoom * 100) + "%"
                     implicitWidth: 68
                     onClicked: book.fitToWidth()
                     ToolTip.visible: hovered
-                    ToolTip.text: "По ширине"
+                    ToolTip.text: "Подогнать лист по ширине"
                 }
                 AppButton { text: "+"; implicitWidth: 42; onClicked: book.changeZoom(0.1) }
             }
