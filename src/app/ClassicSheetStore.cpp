@@ -144,7 +144,16 @@ QVariantMap ClassicSheetStore::load(const QString &filePath) const {
         return {};
 
     const QJsonObject data = document.getData();
-    m_spellBackups.insert(filePath, collectSpellBackup(data));
+
+    // Keep the first rich spell snapshot for the lifetime of this document.
+    // Switching from the interactive view can rewrite the plain-text spell
+    // representation before the classic view reloads. Replacing the cache here
+    // would then lose the original LSS nodes we specifically keep this store to
+    // preserve. A successful classic save refreshes the snapshot below.
+    const QJsonObject currentBackup = m_spellBackups.value(filePath);
+    if (!m_spellBackups.contains(filePath) || currentBackup.isEmpty())
+        m_spellBackups.insert(filePath, collectSpellBackup(data));
+
     m_editedSpellLevels.remove(filePath);
     return data.value(QStringLiteral("dndTrackerClassic")).toObject().toVariantMap();
 }
