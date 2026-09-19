@@ -126,15 +126,15 @@ install(TARGETS dnd_tracker
 )
 
 if(UNIX AND NOT APPLE AND NOT ANDROID)
-    # The prebuilt Qt Linux SDK ships the ICU ABI it was linked against, but
-    # CMake's runtime dependency scanner cannot necessarily resolve that ICU
-    # from the host system (and therefore cannot deploy it). Copy the ICU
-    # runtime straight from the same Qt installation. Keep the glob
-    # version-agnostic so upgrading Qt/ICU does not recreate this bug.
-    get_filename_component(qt_runtime_lib_dir "${Qt6Core_DIR}/../.." ABSOLUTE)
-    file(GLOB qt_icu_runtime_libs
+    # Qt's official Linux SDK can keep its private ICU runtime outside the
+    # top-level lib/ directory. The generic dependency scanner cannot resolve
+    # that runtime on a host whose system ICU has another SONAME, so discover
+    # the ICU files inside the Qt prefix itself and install them beside the
+    # deployed Qt libraries. No ICU major version is hard-coded here.
+    get_filename_component(qt_install_prefix "${Qt6Core_DIR}/../../.." ABSOLUTE)
+    file(GLOB_RECURSE qt_icu_runtime_libs
         LIST_DIRECTORIES FALSE
-        "${qt_runtime_lib_dir}/libicu*.so*"
+        "${qt_install_prefix}/libicu*.so*"
     )
     if(qt_icu_runtime_libs)
         install(FILES ${qt_icu_runtime_libs}
@@ -144,24 +144,10 @@ if(UNIX AND NOT APPLE AND NOT ANDROID)
 endif()
 
 if(NOT ANDROID)
-    set(deploy_qml_args
+    qt_generate_deploy_qml_app_script(
         TARGET dnd_tracker
         OUTPUT_SCRIPT deploy_script
         NO_UNSUPPORTED_PLATFORM_ERROR
     )
-
-    # Official Qt Linux builds depend on the ICU copy shipped with that Qt
-    # build. Qt's generic deployment helper normally omits libraries it treats
-    # as system runtime dependencies, which made the archive depend on the
-    # builder's libicu SONAME (for Qt 6.8.3: libicu*.so.73). Force ICU into the
-    # deploy set so users on rolling distributions do not need the exact same
-    # ICU major version installed system-wide.
-    if(UNIX AND NOT APPLE)
-        list(APPEND deploy_qml_args
-            POST_INCLUDE_REGEXES ".*/libicu[^/]*\\.so(\\..*)?$"
-        )
-    endif()
-
-    qt_generate_deploy_qml_app_script(${deploy_qml_args})
     install(SCRIPT ${deploy_script})
 endif()
