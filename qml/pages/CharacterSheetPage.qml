@@ -19,6 +19,7 @@ Item {
     property int passivePerceptionOverride: -1
     property int currentTab: 0
     signal backRequested()
+    signal modeSwitchRequested()
 
     readonly property var tabNames: ["Основное", "Навыки", "Описание", "Оружие", "Магия"]
     readonly property var statCodes: ["str", "dex", "con", "int", "wis", "cha"]
@@ -189,7 +190,11 @@ Item {
         if (App.saveCharacterBasics(filePath, values)) {
             saveState.text = "Сохранено ✓"
             saveFlash.restart()
+            return true
         }
+        saveState.text = "Ошибка сохранения"
+        saveState.opacity = 1
+        return false
     }
 
     Component.onCompleted: reload()
@@ -228,8 +233,15 @@ Item {
                 Label {
                     id: saveState
                     visible: opacity > 0
-                    color: Theme.success
+                    color: saveState.text.indexOf("Ошибка") === 0 ? Theme.danger : Theme.success
                     opacity: 0
+                }
+                AppButton {
+                    text: page.width < 620 ? "Вид" : "Классический вид"
+                    implicitWidth: page.width < 620 ? 58 : implicitContentWidth + 28
+                    onClicked: page.modeSwitchRequested()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Переключить в классический лист"
                 }
                 AppButton {
                     text: "Сохранить"
